@@ -172,6 +172,11 @@ export default function ProfileScreen({ navigation, data, updateField }) {
         onPress={() => navigation.navigate("BuddySystem")}
       />
       <View style={{ height: 12 }} />
+      <PrimaryButton
+        title="Find a mentor"
+        onPress={() => navigation.navigate("MentorHome")}
+      />
+      <View style={{ height: 12 }} />
       <PrimaryButton title="Edit Profile" onPress={() => setIsEditing(true)} />
 
       {/* ✅ Edit Modal — pops up to change answers! */}

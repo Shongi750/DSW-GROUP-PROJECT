@@ -5,8 +5,8 @@ import { useAppTheme } from '../../context/ThemeContext';
 const tabs = [
   ['Meals', 'MealPlanning', '♨'],
   ['Buddies', 'BuddySystem', '♣'],
+  ['Mentors', 'MentorHome', '★'],
   ['List', 'ShoppingList', '☰'],
-  ['Budget', 'Budget', 'R'],
   ['Profile', 'Profile', '♙'],
 ];
 

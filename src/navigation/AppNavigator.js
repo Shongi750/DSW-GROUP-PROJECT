@@ -20,6 +20,9 @@ import BudgetScreen from "../components/BudgetScreen";
 import MealPlanScreen from "../components/MealPlanning";
 import NotificationsScreen from "../screens/NotificationsScreen";
 import BuddySystemNavigator from "../../navigation/BuddySystemNavigator";
+import MentorHomeScreen from "../../screens/HomeScreen";
+import MentorListScreen from "../../screens/MentorListScreen";
+import MatchScreen from "../../screens/MatchScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -131,6 +134,9 @@ export default function AppNavigator() {
             />
           )}
         </Stack.Screen>
+        <Stack.Screen name="MentorHome" component={MentorHomeScreen} />
+        <Stack.Screen name="Mentors" component={MentorListScreen} />
+        <Stack.Screen name="Match" component={MatchScreen} />
       </Stack.Navigator>
     </SafeAreaView>
   );
