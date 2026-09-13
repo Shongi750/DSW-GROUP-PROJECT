@@ -13,6 +13,12 @@ import FoodBudgetScreen from "../screens/onboarding/FoodBudgetScreen";
 import FundingTypeScreen from "../screens/onboarding/FundingTypeScreen";
 import CampusScreen from "../screens/onboarding/CampusScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import MealPlanningScreen from "../screens/MealPlanning/MealPlanningScreen";
+import ShoppingListScreen from "../screens/MealPlanning/ShoppingListScreen";
+import MealDetailScreen from "../screens/MealDetailScreen";
+import BudgetScreen from "../components/BudgetScreen";
+import MealPlanScreen from "../components/MealPlanning";
+import NotificationsScreen from "../screens/NotificationsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -103,6 +109,12 @@ export default function AppNavigator() {
             />
           )}
         </Stack.Screen>
+        <Stack.Screen name="MealPlanning" component={MealPlanningScreen} />
+        <Stack.Screen name="MealPlan" component={MealPlanScreen} />
+        <Stack.Screen name="MealDetail" component={MealDetailScreen} />
+        <Stack.Screen name="ShoppingList" component={ShoppingListScreen} />
+        <Stack.Screen name="Budget" component={BudgetScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
       </Stack.Navigator>
     </SafeAreaView>
   );
