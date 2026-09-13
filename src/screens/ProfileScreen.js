@@ -19,7 +19,7 @@ import {
   CAMPUSES,
 } from "../data/onboardingOptions";
 
-export default function ProfileScreen({ data, updateField }) {
+export default function ProfileScreen({ navigation, data, updateField }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editField, setEditField] = useState("");
   const [tempValue, setTempValue] = useState("");
@@ -162,6 +162,16 @@ export default function ProfileScreen({ data, updateField }) {
         <Text style={styles.value}>{data.fundingType || "Not selected"}</Text>
       </View>
 
+      <PrimaryButton
+        title="Open meal planner"
+        onPress={() => navigation.navigate("MealPlanning")}
+      />
+      <View style={{ height: 12 }} />
+      <PrimaryButton
+        title="Open buddy matcher"
+        onPress={() => navigation.navigate("BuddySystem")}
+      />
+      <View style={{ height: 12 }} />
       <PrimaryButton title="Edit Profile" onPress={() => setIsEditing(true)} />
 
       {/* ✅ Edit Modal — pops up to change answers! */}

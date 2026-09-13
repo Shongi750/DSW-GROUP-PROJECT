@@ -13,6 +13,13 @@ import FoodBudgetScreen from "../screens/onboarding/FoodBudgetScreen";
 import FundingTypeScreen from "../screens/onboarding/FundingTypeScreen";
 import CampusScreen from "../screens/onboarding/CampusScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import MealPlanningScreen from "../screens/MealPlanning/MealPlanningScreen";
+import ShoppingListScreen from "../screens/MealPlanning/ShoppingListScreen";
+import MealDetailScreen from "../screens/MealDetailScreen";
+import BudgetScreen from "../components/BudgetScreen";
+import MealPlanScreen from "../components/MealPlanning";
+import NotificationsScreen from "../screens/NotificationsScreen";
+import BuddySystemNavigator from "../../navigation/BuddySystemNavigator";
 
 const Stack = createNativeStackNavigator();
 
@@ -100,6 +107,27 @@ export default function AppNavigator() {
               {...props}
               data={onboardingData}
               updateField={updateField}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="MealPlanning" component={MealPlanningScreen} />
+        <Stack.Screen name="MealPlan" component={MealPlanScreen} />
+        <Stack.Screen name="MealDetail" component={MealDetailScreen} />
+        <Stack.Screen name="ShoppingList" component={ShoppingListScreen} />
+        <Stack.Screen name="Budget" component={BudgetScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="BuddySystem">
+          {() => (
+            <BuddySystemNavigator
+              currentStudent={{
+                id: onboardingData.userId || "guest",
+                name: onboardingData.name || "Student",
+                campus: onboardingData.campus || "APK",
+                fitnessGoal: onboardingData.fitnessGoal || "General fitness",
+                experienceLevel: onboardingData.experienceLevel || "Beginner",
+                preferredSchedule: [],
+                workoutLocation: onboardingData.workoutPreference || "Gym",
+              }}
             />
           )}
         </Stack.Screen>
