@@ -23,6 +23,6 @@ const styles = StyleSheet.create({
   stepText: { fontSize: 14, color: "#666", marginBottom: 8 },
   dotsContainer: { flexDirection: "row", gap: 6 },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  activeDot: { backgroundColor: "#4CAF50" },
+  activeDot: { backgroundColor: "#8B4513" },
   inactiveDot: { backgroundColor: "#ddd" },
 });

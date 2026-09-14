@@ -1,12 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 
 export default function SelectionCard({ label, selected, onPress }) {
   return (
     <TouchableOpacity
       style={[styles.card, selected && styles.selectedCard]}
       onPress={onPress}
+      activeOpacity={0.7}
     >
-      <Text style={[styles.cardText, selected && styles.selectedText]}>
+      <Text style={[styles.label, selected && styles.selectedLabel]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -15,25 +16,24 @@ export default function SelectionCard({ label, selected, onPress }) {
 
 const styles = StyleSheet.create({
   card: {
-    padding: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-    width: "100%",
+    borderWidth: 1.5,
+    borderColor: "#E5D4CD",       // soft beige border
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",    // white when NOT selected
+    marginBottom: 12,
   },
   selectedCard: {
-    borderColor: "#4CAF50",
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#FDE4DC",    // ✅ Light peach background when SELECTED
+    borderColor: "#8B4513",       // ✅ BROWN border when SELECTED
   },
-  cardText: {
-    fontSize: 16,
-    textAlign: "center",
-    color: "#333",
+  label: {
+    fontSize: 17,
+    color: "#333333",             // dark text when NOT selected
   },
-  selectedText: {
-    fontWeight: "bold",
-    color: "#2E7D32",
+  selectedLabel: {
+    color: "#5C2E09",             // ✅ Dark brown text when SELECTED
+    fontWeight: "600",
   },
 });
