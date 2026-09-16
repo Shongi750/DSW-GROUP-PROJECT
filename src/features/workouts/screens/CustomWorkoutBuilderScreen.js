@@ -1,151 +1,268 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { 
+  View, Text, TextInput, StyleSheet, TouchableOpacity, FlatList, 
+  Alert, SafeAreaView, ActivityIndicator, Modal, Image 
+} from 'react-native';
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 
+const COLORS = {
+  primary: '#BA4A0C', // Figma Burnt Orange
+  teal: '#006B63',
+  background: '#FFFFFF',
+  surface: '#F8F9FA',
+  textDark: '#1A1A1A',
+  textLight: '#666666',
+  border: '#EEEEEE',
+  danger: '#D32F2F'
+};
+
 export default function CustomWorkoutBuilderScreen({ navigation }) {
-  const [exercises, setExercises] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [workoutName, setWorkoutName] = useState("");
+  const [workoutTitle, setWorkoutTitle] = useState('');
+  const [selectedExercises, setSelectedExercises] = useState([]);
+  
+  // Database State
+  const [allExercises, setAllExercises] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Modal State
+  const [isModalVisible, setIsModalVisible] = useState(false);
 
   useEffect(() => {
     const fetchExercises = async () => {
       try {
         const snapshot = await getDocs(collection(db, 'exercises'));
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setExercises(data);
+        const exercisesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllExercises(exercisesData);
       } catch (error) {
-        console.error(error);
-        Alert.alert("Error", "Failed to load exercises.");
+        console.error("Error fetching exercises: ", error);
+        Alert.alert('Error', 'Could not load exercises from the database.');
       } finally {
         setLoading(false);
       }
     };
+
     fetchExercises();
   }, []);
 
-  const toggleExercise = (id) => {
-    if (selectedIds.includes(id)) {
-      setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
-    } else {
-      setSelectedIds([...selectedIds, id]);
-    }
+  const handleAddExercise = (exercise) => {
+    // Format it so it matches your ActiveWorkout screen requirements
+    const formattedExercise = {
+      id: exercise.id,
+      name: (exercise.name || 'Unknown').toUpperCase(),
+      category: exercise.bodyPart || 'General',
+      gifUrl: exercise.gifUrl || '',
+      description: Array.isArray(exercise.instructions) ? exercise.instructions.join(' ') : 'Standard form.',
+      sets: 3,
+      reps: '10-12',
+      rest: '60s'
+    };
+    
+    setSelectedExercises(prev => [...prev, formattedExercise]);
+    setIsModalVisible(false);
+  };
+
+  const handleRemoveExercise = (indexToRemove) => {
+    setSelectedExercises(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const handleSaveWorkout = async () => {
-    if (!workoutName.trim()) return Alert.alert("Hold up!", "Please give your workout a name.");
-    if (selectedIds.length === 0) return Alert.alert("Wait!", "You must select at least one exercise.");
+    if (!workoutTitle.trim()) {
+      Alert.alert('Hold Up', 'Please give your custom workout a catchy name!');
+      return;
+    }
+    if (selectedExercises.length === 0) {
+      Alert.alert('Wait a minute', 'You need to add at least one exercise to save a workout.');
+      return;
+    }
 
-    setSaving(true);
+    setIsSaving(true);
     try {
-      // Gather the full exercise objects based on what the user selected
-      const selectedExerciseObjects = exercises
-        .filter(ex => selectedIds.includes(ex.id))
-        .map(ex => {
-          const descriptionText = Array.isArray(ex.instructions) 
-            ? ex.instructions.join(' ') 
-            : 'Follow standard form for this movement.';
-          return {
-            id: ex.id,
-            category: ex.bodyPart || 'General',
-            name: (ex.name || 'Unknown').toUpperCase(),
-            description: descriptionText,
-            gifUrl: ex.gifUrl || '',
-            sets: 3, 
-            reps: '10', 
-            rest: '60s'
-          };
-        });
-
-      // Format it to match your home screen cards perfectly
-      const customPlanId = `custom_${Date.now()}`;
-      const customPlan = {
-        id: customPlanId,
-        category: 'Custom Routine',
-        title: workoutName,
-        duration: `${selectedExerciseObjects.length * 5} Min`,
-        level: 'Personalized',
-        exercises: selectedExerciseObjects,
-        userId: auth.currentUser?.uid // Tag it to this user
+      const currentUserId = auth.currentUser?.uid;
+      
+      const newCustomWorkout = {
+        title: workoutTitle,
+        category: 'Custom',
+        level: 'Mixed',
+        duration: `${selectedExercises.length * 10} Min`, // Rough estimate: 10 mins per exercise
+        creatorId: currentUserId,
+        exercises: selectedExercises,
+        createdAt: serverTimestamp(),
+        isCustom: true // Flag to filter it later if needed
       };
 
-      // Save to Firebase and return home
-      await setDoc(doc(db, 'workout_plans', customPlanId), customPlan);
-      Alert.alert("Saved!", "Your custom workout is ready to go.");
-      navigation.goBack();
-
+      // Save to your workout_plans collection
+      await addDoc(collection(db, 'workout_plans'), newCustomWorkout);
+      
+      Alert.alert('Success! 🎉', 'Your custom workout is live and ready to crush.', [
+        { text: 'Awesome', onPress: () => navigation.goBack() }
+      ]);
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Could not save workout.");
+      console.error("Error saving custom workout: ", error);
+      Alert.alert('Error', 'Could not save your custom workout.');
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  const renderExercise = ({ item }) => {
-    const isSelected = selectedIds.includes(item.id);
-    return (
-      <TouchableOpacity 
-        style={[styles.exerciseCard, isSelected && styles.exerciseCardSelected]} 
-        onPress={() => toggleExercise(item.id)}
-      >
-        <Text style={[styles.exerciseName, isSelected && styles.textSelected]}>
-          {item.name ? item.name.toUpperCase() : 'UNKNOWN EXERCISE'}
-        </Text>
-        <Text style={styles.exerciseBodyPart}>{item.bodyPart || 'General'}</Text>
-      </TouchableOpacity>
-    );
-  };
-
   if (loading) {
-    return <ActivityIndicator size="large" color="#FF6F00" style={styles.loader} />;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.headerTitle}>Build Custom Workout</Text>
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Name your routine (e.g., Monday Leg Day)"
-        value={workoutName}
-        onChangeText={setWorkoutName}
-      />
-
-      <Text style={styles.subHeader}>Select Exercises ({selectedIds.length} chosen)</Text>
-
-      <FlatList
-        data={exercises}
-        keyExtractor={item => item.id}
-        renderItem={renderExercise}
-        contentContainerStyle={styles.list}
-      />
-
-      {saving ? (
-        <ActivityIndicator size="large" color="#FF6F00" style={{ marginVertical: 20 }} />
-      ) : (
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveWorkout}>
-          <Text style={styles.saveButtonText}>Save & Finish</Text>
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-      )}
-    </View>
+        <Text style={styles.headerTitle}>Builder</Text>
+        <View style={{ width: 50 }} />
+      </View>
+
+      <View style={styles.content}>
+        <Text style={styles.label}>Workout Name</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g., Ultimate Leg Day"
+          placeholderTextColor="#999"
+          value={workoutTitle}
+          onChangeText={setWorkoutTitle}
+        />
+
+        <View style={styles.exercisesHeaderRow}>
+          <Text style={styles.label}>Exercises ({selectedExercises.length})</Text>
+          <TouchableOpacity onPress={() => setIsModalVisible(true)}>
+            <Text style={styles.addText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
+
+        {selectedExercises.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyBoxText}>No exercises added yet.</Text>
+            <Text style={styles.emptyBoxSubtext}>Tap "+ Add" to build your routine.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={selectedExercises}
+            keyExtractor={(item, index) => `${item.id}-${index}`}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item, index }) => (
+              <View style={styles.selectedExerciseCard}>
+                <View style={styles.selectedExerciseInfo}>
+                  <Text style={styles.exerciseName}>{item.name}</Text>
+                  <Text style={styles.exerciseDetails}>{item.sets} Sets • {item.reps} Reps</Text>
+                </View>
+                <TouchableOpacity onPress={() => handleRemoveExercise(index)} style={styles.removeBtn}>
+                  <Text style={styles.removeBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          />
+        )}
+      </View>
+
+      {/* Save Button */}
+      <View style={styles.footer}>
+        <TouchableOpacity 
+          style={[styles.saveButton, selectedExercises.length === 0 && styles.saveButtonDisabled]} 
+          onPress={handleSaveWorkout}
+          disabled={isSaving || selectedExercises.length === 0}
+        >
+          {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Save Workout</Text>}
+        </TouchableOpacity>
+      </View>
+
+      {/* Exercise Picker Modal */}
+      <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Exercise</Text>
+            <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+              <Text style={styles.closeText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            data={allExercises}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.modalList}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.exerciseOption} onPress={() => handleAddExercise(item)}>
+                <Image 
+                  source={{ uri: item.gifUrl || 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=100&q=80' }} 
+                  style={styles.modalThumb} 
+                />
+                <View style={styles.modalOptionText}>
+                  <Text style={styles.modalOptionName}>{item.name}</Text>
+                  <Text style={styles.modalOptionTarget}>{item.bodyPart}</Text>
+                </View>
+                <Text style={styles.addIcon}>+</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA', padding: 20, paddingTop: 40 },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#1A1A1A', marginBottom: 20 },
-  input: { backgroundColor: '#FFF', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#DDD', fontSize: 16, marginBottom: 20 },
-  subHeader: { fontSize: 16, fontWeight: '600', color: '#666', marginBottom: 10 },
-  list: { paddingBottom: 20 },
-  exerciseCard: { backgroundColor: '#FFF', padding: 15, borderRadius: 10, marginBottom: 10, borderWidth: 2, borderColor: '#F0F0F0' },
-  exerciseCardSelected: { borderColor: '#FF6F00', backgroundColor: '#FFF3E0' },
-  exerciseName: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
-  textSelected: { color: '#FF6F00' },
-  exerciseBodyPart: { fontSize: 12, color: '#888', marginTop: 4, textTransform: 'capitalize' },
-  saveButton: { backgroundColor: '#FF6F00', padding: 18, borderRadius: 10, alignItems: 'center', marginTop: 10 },
-  saveButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 }
+  container: { flex: 1, backgroundColor: COLORS.background },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  backButton: { paddingVertical: 5 },
+  backText: { fontSize: 16, color: COLORS.primary, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textDark },
+
+  content: { flex: 1, padding: 20 },
+  label: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
+  input: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: COLORS.textDark,
+    marginBottom: 24,
+  },
+  
+  exercisesHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  addText: { color: COLORS.primary, fontWeight: '700', fontSize: 16 },
+  
+  emptyBox: { backgroundColor: COLORS.surface, padding: 30, borderRadius: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CCC' },
+  emptyBoxText: { fontSize: 16, fontWeight: '600', color: COLORS.textDark, marginBottom: 4 },
+  emptyBoxSubtext: { fontSize: 14, color: COLORS.textLight },
+
+  selectedExerciseCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.surface, padding: 16, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border },
+  selectedExerciseInfo: { flex: 1 },
+  exerciseName: { fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 },
+  exerciseDetails: { fontSize: 13, color: COLORS.textLight, fontWeight: '500' },
+  removeBtn: { padding: 8 },
+  removeBtnText: { color: COLORS.danger, fontSize: 18, fontWeight: 'bold' },
+
+  footer: { padding: 20, borderTopWidth: 1, borderTopColor: COLORS.border },
+  saveButton: { backgroundColor: COLORS.textDark, paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  saveButtonDisabled: { backgroundColor: '#E0E0E0' },
+  saveButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+
+  // Modal Styles
+  modalContainer: { flex: 1, backgroundColor: COLORS.background },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark },
+  closeText: { fontSize: 16, color: COLORS.textLight, fontWeight: '600' },
+  modalList: { padding: 20 },
+  exerciseOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.surface },
+  modalThumb: { width: 50, height: 50, borderRadius: 8, backgroundColor: COLORS.surface, marginRight: 15 },
+  modalOptionText: { flex: 1 },
+  modalOptionName: { fontSize: 16, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' },
+  modalOptionTarget: { fontSize: 13, color: COLORS.textLight, marginTop: 4, textTransform: 'capitalize' },
+  addIcon: { fontSize: 24, color: COLORS.primary, fontWeight: '400' }
 });

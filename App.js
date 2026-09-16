@@ -7,7 +7,15 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 // Firebase imports
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from './src/config/firebase'; 
+import { auth, db } from './src/config/firebase';
+import { LogBox } from 'react-native';
+
+// Ignore specific Firebase connection warnings in development
+LogBox.ignoreLogs([
+  '@firebase/firestore: Firestore',
+  'WebChannelConnection RPC', 
+  'Listen stream'
+]);
 
 // --- App Screens ---
 import WorkoutHomeScreen from './src/features/workouts/screens/WorkoutHomeScreen';

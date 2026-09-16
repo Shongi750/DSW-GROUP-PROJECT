@@ -5,8 +5,19 @@ import { signOut } from 'firebase/auth';
 import { db, auth } from '../../../config/firebase';
 import { ALL_BADGES } from '../services/progressService';
 
+// ✨ Figma Colors matching your app's theme
+const COLORS = {
+  primary: '#BA4A0C', 
+  background: '#FFFFFF',
+  surface: '#F8F9FA',
+  textDark: '#1A1A1A',
+  textLight: '#888888',
+  border: '#EEEEEE',
+  success: '#2E7D32'
+};
+
 export default function ProgressDashboardScreen({ navigation }) {
-  const [userData, setUserData] = useState(null); // ✨ NEW: State for user profile data
+  const [userData, setUserData] = useState(null);
   const [stats, setStats] = useState({
     totalWorkouts: 0,
     activeTimeMinutes: 0,
@@ -14,7 +25,6 @@ export default function ProgressDashboardScreen({ navigation }) {
   const [unlockedBadges, setUnlockedBadges] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Helper function to map campus codes to friendly names
   const getCampusLabel = (value) => {
     const map = {
       APK: "Auckland Park Kingsway",
@@ -31,14 +41,10 @@ export default function ProgressDashboardScreen({ navigation }) {
         const currentUserId = auth.currentUser?.uid; 
         if (!currentUserId) return; 
 
-        // ✨ 1. Fetch User Profile Data (Name, Campus, Goal)
         const userDocRef = doc(db, 'users', currentUserId);
         const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) {
-          setUserData(userSnap.data());
-        }
+        if (userSnap.exists()) setUserData(userSnap.data());
 
-        // 2. Fetch workout logs
         const logsRef = collection(db, 'workout_logs');
         const q = query(logsRef, where("userId", "==", currentUserId));
         const querySnapshot = await getDocs(q);
@@ -55,10 +61,8 @@ export default function ProgressDashboardScreen({ navigation }) {
           activeTimeMinutes: Math.round(totalSeconds / 60),
         });
 
-        // 3. Fetch unlocked badges
         const progressDocRef = doc(db, 'user_progress', currentUserId);
         const progressSnap = await getDoc(progressDocRef);
-        
         if (progressSnap.exists()) {
           setUnlockedBadges(progressSnap.data().unlockedBadgeIds || []);
         }
@@ -69,7 +73,6 @@ export default function ProgressDashboardScreen({ navigation }) {
       }
     };
 
-    // Refresh when the screen comes into focus
     const unsubscribe = navigation.addListener('focus', () => {
       fetchProgress();
     });
@@ -81,16 +84,20 @@ export default function ProgressDashboardScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6F00" />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
+  // Calculate percentage for the new sleek progress bar (cap at 100%)
+  const weeklyGoal = 5;
+  const progressPercentage = Math.min((stats.totalWorkouts / weeklyGoal) * 100, 100);
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* ✨ NEW: Personalized Greeting */}
+        {/* Header Section */}
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>
             Hello, {userData?.name ? userData.name.split(' ')[0] : 'Student'}!
@@ -98,81 +105,84 @@ export default function ProgressDashboardScreen({ navigation }) {
           <Text style={styles.headerSubtitle}>Keep up the momentum. You're doing great!</Text>
         </View>
 
-        {/* ✨ NEW: Profile Summary Card */}
+        {/* Structured Profile Card */}
         {userData && (
-          <View style={styles.profileSummaryCard}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Campus:</Text>
-              <Text style={styles.summaryValue}>{getCampusLabel(userData.campus)}</Text>
+          <View style={styles.profileCard}>
+            <View style={styles.profileRow}>
+              <Text style={styles.profileLabel}>Campus</Text>
+              <Text style={styles.profileValue}>{getCampusLabel(userData.campus)}</Text>
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Goal:</Text>
-              <Text style={styles.summaryValue}>{userData.goal || 'Not set'}</Text>
+            <View style={styles.divider} />
+            <View style={styles.profileRow}>
+              <Text style={styles.profileLabel}>Goal</Text>
+              <Text style={styles.profileValue}>{userData.goal || 'Not set'}</Text>
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Level:</Text>
-              <Text style={styles.summaryValue}>{userData.level || 'Not set'}</Text>
+            <View style={styles.divider} />
+            <View style={styles.profileRow}>
+              <Text style={styles.profileLabel}>Level</Text>
+              <Text style={styles.profileValue}>{userData.level || 'Not set'}</Text>
             </View>
           </View>
         )}
 
-        {/* 2x2 Stats Grid */}
-        <View style={styles.grid}>
-          <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>Current Streak</Text>
-            <Text style={styles.gridValue}>1 Day</Text>
+        {/* Clean Weekly Progress Bar (Replaces the weird dots) */}
+        <View style={styles.weeklyGoalCard}>
+          <View style={styles.weeklyGoalHeader}>
+            <Text style={styles.sectionTitle}>Weekly Goal</Text>
+            <Text style={styles.weeklyGoalText}>{stats.totalWorkouts} / {weeklyGoal} Workouts</Text>
           </View>
-          <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>Total Workouts</Text>
-            <Text style={styles.gridValue}>{stats.totalWorkouts}</Text>
-          </View>
-          <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>Calories Burned</Text>
-            <Text style={styles.gridValue}>~{stats.totalWorkouts * 220} kcal</Text>
-          </View>
-          <View style={styles.gridCard}>
-            <Text style={styles.gridLabel}>Active Time</Text>
-            <Text style={styles.gridValue}>{stats.activeTimeMinutes} mins</Text>
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
           </View>
         </View>
 
-        {/* Achievement Badges Section */}
-        <View style={styles.sectionContainer}>
+        {/* 2x2 Stats Grid in neatly boxed cards */}
+        <View style={styles.gridContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Total Workouts</Text>
+            <Text style={styles.statValue}>{stats.totalWorkouts}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Active Time</Text>
+            <Text style={styles.statValue}>{stats.activeTimeMinutes} <Text style={styles.statUnit}>mins</Text></Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Calories Burned</Text>
+            <Text style={styles.statValue}>~{stats.activeTimeMinutes * 8} <Text style={styles.statUnit}>kcal</Text></Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Current Streak</Text>
+            <Text style={styles.statValue}>{stats.totalWorkouts > 0 ? '🔥 Active' : 'None'}</Text>
+          </View>
+        </View>
+
+        {/* Achievement Badges in a Horizontal Scroll */}
+        <View style={styles.achievementsSection}>
           <Text style={styles.sectionTitle}>Achievement Badges</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achievementsList}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
             {ALL_BADGES.map((badge) => {
               const isUnlocked = unlockedBadges.includes(badge.id);
               return (
-                <View 
-                  key={badge.id} 
-                  style={[styles.badgeCard, !isUnlocked && styles.badgeCardLocked]}
-                >
+                <View key={badge.id} style={[styles.badgeCard, !isUnlocked && styles.badgeCardLocked]}>
                   <Text style={[styles.badgeIcon, !isUnlocked && styles.badgeIconLocked]}>
                     {isUnlocked ? badge.icon : '🔒'}
                   </Text>
-                  <Text style={[styles.badgeTitle, !isUnlocked && styles.badgeTextLocked]}>
+                  <Text style={[styles.badgeTitle, !isUnlocked && styles.badgeTextLocked]} numberOfLines={1}>
                     {badge.title}
                   </Text>
-                  <Text style={styles.badgeDesc}>{badge.description}</Text>
+                  <Text style={styles.badgeDesc} numberOfLines={2}>{badge.description}</Text>
                 </View>
               );
             })}
           </ScrollView>
         </View>
 
-        {/* Edit Profile Button */}
-        <TouchableOpacity 
-          style={styles.editButton} 
-          onPress={() => navigation.navigate('ProfileEdit')}
-        >
+        {/* Action Buttons */}
+        <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('ProfileEdit')}>
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
 
-        {/* Log Out Button */}
-        <TouchableOpacity 
-          style={styles.logoutButton} 
-          onPress={() => signOut(auth)}
-        >
+        <TouchableOpacity style={styles.logoutButton} onPress={() => signOut(auth)}>
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </TouchableOpacity>
 
@@ -182,88 +192,73 @@ export default function ProgressDashboardScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background },
   scrollContent: { padding: 20, paddingBottom: 40 },
-  headerContainer: { marginTop: 20, marginBottom: 16 },
-  headerTitle: { fontSize: 28, fontWeight: '800', color: '#1A1A1A', marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: '#666666' },
+  
+  headerContainer: { marginTop: 10, marginBottom: 24 },
+  headerTitle: { fontSize: 32, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 },
+  headerSubtitle: { fontSize: 15, color: COLORS.textLight, fontWeight: '500' },
 
-  // ✨ NEW: Profile Summary Styles
-  profileSummaryCard: {
-    backgroundColor: '#E8F5E9', // Light green background
-    padding: 16,
-    borderRadius: 12,
+  // Profile Card Styles
+  profileCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#C8E6C9',
+    borderColor: COLORS.border,
   },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  summaryLabel: { fontSize: 14, color: '#388E3C', fontWeight: '600' },
-  summaryValue: { fontSize: 14, color: '#1B5E20', fontWeight: 'bold' },
+  profileRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  profileLabel: { fontSize: 14, color: COLORS.textLight, fontWeight: '600' },
+  profileValue: { fontSize: 14, color: COLORS.textDark, fontWeight: '700' },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 12 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
-  gridCard: {
-    backgroundColor: '#FFFFFF',
+  // Sleek Progress Bar Styles
+  weeklyGoalCard: { marginBottom: 32 },
+  weeklyGoalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: COLORS.textDark },
+  weeklyGoalText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+  progressBarBackground: { height: 10, backgroundColor: COLORS.surface, borderRadius: 10, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 10 },
+
+  // 2x2 Stats Grid Styles
+  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 32 },
+  statCard: {
     width: '48%',
+    backgroundColor: COLORS.surface,
     padding: 16,
     borderRadius: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#F0F0F0',
-    elevation: 2,
+    borderColor: COLORS.border,
   },
-  gridLabel: { fontSize: 13, color: '#888888', fontWeight: '600', marginBottom: 8 },
-  gridValue: { fontSize: 22, fontWeight: '800', color: '#FF6F00' },
+  statLabel: { fontSize: 12, color: COLORS.textLight, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase' },
+  statValue: { fontSize: 22, fontWeight: '800', color: COLORS.textDark },
+  statUnit: { fontSize: 14, fontWeight: '600', color: COLORS.textLight },
 
-  sectionContainer: { marginBottom: 30 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1A1A1A', marginBottom: 16 },
-  
-  achievementsList: { paddingRight: 20, gap: 12 },
+  // Achievement Badges Styles
+  achievementsSection: { marginBottom: 40 },
+  badgesScroll: { gap: 16, paddingRight: 20, marginTop: 16 },
   badgeCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.surface,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    width: 130,
+    width: 140,
     borderWidth: 1,
-    borderColor: '#FFE0B2',
-    elevation: 2,
+    borderColor: COLORS.border,
   },
-  badgeCardLocked: {
-    backgroundColor: '#F5F5F5',
-    borderColor: '#E0E0E0',
-    elevation: 0,
-    opacity: 0.65,
-  },
-  badgeIcon: { fontSize: 32, marginBottom: 6 },
-  badgeIconLocked: { fontSize: 26 },
-  badgeTitle: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', textAlign: 'center', marginBottom: 4 },
-  badgeTextLocked: { color: '#888888' },
-  badgeDesc: { fontSize: 10, color: '#777777', textAlign: 'center', lineHeight: 14 },
+  badgeCardLocked: { backgroundColor: '#F9F9F9', borderColor: '#F0F0F0', opacity: 0.7 },
+  badgeIcon: { fontSize: 36, marginBottom: 10 },
+  badgeIconLocked: { fontSize: 28, color: '#CCCCCC' },
+  badgeTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 4 },
+  badgeTextLocked: { color: COLORS.textLight },
+  badgeDesc: { fontSize: 11, color: COLORS.textLight, textAlign: 'center', lineHeight: 16 },
   
-  editButton: {
-    backgroundColor: '#1A1A1A', 
-    padding: 15, 
-    borderRadius: 10, 
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  editButtonText: {
-    color: '#FFF', 
-    fontWeight: 'bold', 
-    fontSize: 16
-  },
-  logoutButton: {
-    backgroundColor: '#D32F2F', 
-    padding: 15, 
-    borderRadius: 10, 
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  logoutButtonText: {
-    color: '#FFF', 
-    fontWeight: 'bold', 
-    fontSize: 16
-  }
+  // Action Buttons
+  editButton: { backgroundColor: COLORS.textDark, padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  editButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  logoutButton: { backgroundColor: COLORS.surface, padding: 16, borderRadius: 12, alignItems: 'center' },
+  logoutButtonText: { color: '#D32F2F', fontWeight: '700', fontSize: 16 }
 });
