@@ -20,15 +20,14 @@ import {
   CAMPUSES,
 } from "../data/onboardingOptions";
 
-// ✨ NEW: Firebase imports
-import { doc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+// ✨ NEW: Supabase import
+import { supabase } from '../config/supabase';
 
 export default function ProfileScreen({ data, updateField }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editField, setEditField] = useState("");
   const [tempValue, setTempValue] = useState("");
-  const [isSaving, setIsSaving] = useState(false); // ✨ NEW: Loading state
+  const [isSaving, setIsSaving] = useState(false);
 
   const getCampusLabel = (value) => {
     const map = {
@@ -55,7 +54,7 @@ export default function ProfileScreen({ data, updateField }) {
     setEditField("");
   };
 
-  // ✨ NEW: Function to finalize onboarding and trigger App.js redirect
+  // ✨ NEW: Completely converted to Supabase
   const handleCompleteOnboarding = async () => {
     if (!data.campus) {
       return Alert.alert("Missing Info", "Please ensure you have selected a campus.");
@@ -63,17 +62,20 @@ export default function ProfileScreen({ data, updateField }) {
     
     setIsSaving(true);
     try {
-      const currentUserId = auth.currentUser?.uid;
-      if (currentUserId) {
-        await updateDoc(doc(db, 'users', currentUserId), {
-          campus: data.campus,
-          goal: data.fitnessGoal,
-          level: data.experienceLevel,
-          workoutPreference: data.workoutPreference,
-          foodBudget: data.foodBudget,
-          fundingType: data.fundingType
-        });
-        // Note: We don't need to navigate manually! App.js will detect this save and move us.
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            campus: data.campus,
+            goal: data.fitnessGoal || "General Fitness",
+            level: data.experienceLevel || "Beginner",
+          })
+          .eq('id', user.id);
+          
+        if (error) throw error;
+        // App.js Realtime listener will instantly detect this update and route you!
       }
     } catch (error) {
       console.error("Error saving profile:", error);
@@ -173,7 +175,6 @@ export default function ProfileScreen({ data, updateField }) {
 
       <PrimaryButton title="Edit Profile" onPress={() => setIsEditing(true)} />
 
-      {/* ✨ NEW: The Final Finish Button */}
       <View style={{ marginTop: 16 }}>
         {isSaving ? (
           <ActivityIndicator size="large" color="#2E7D32" />

@@ -1,190 +1,139 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, TouchableOpacity } from 'react-native';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { db, auth } from '../../../config/firebase';
-import { ALL_BADGES } from '../services/progressService';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
-// ✨ Figma Colors matching your app's theme
 const COLORS = {
-  primary: '#BA4A0C', 
   background: '#FFFFFF',
   surface: '#F8F9FA',
+  surfaceLight: '#EEEEEE',
+  primary: '#BA4A0C',          // Signature vibrant orange
+  primaryLight: '#FCEFE9',
   textDark: '#1A1A1A',
-  textLight: '#888888',
-  border: '#EEEEEE',
-  success: '#2E7D32'
+  textLight: '#666666',
+  border: '#EAEAEA',
+  teal: '#006B63',
+  tealLight: '#E6F0EF'
 };
 
 export default function ProgressDashboardScreen({ navigation }) {
-  const [userData, setUserData] = useState(null);
-  const [stats, setStats] = useState({
-    totalWorkouts: 0,
-    activeTimeMinutes: 0,
+  const [stats] = useState({
+    totalWorkouts: 12,
+    totalMinutes: 360,
+    currentStreak: 4,
   });
-  const [unlockedBadges, setUnlockedBadges] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  const getCampusLabel = (value) => {
-    const map = {
-      APK: "Auckland Park Kingsway",
-      APB: "Auckland Park Bunting",
-      DFC: "Doornfontein Campus",
-      SWC: "Soweto Campus",
-    };
-    return map[value] || value;
-  };
+  // Weekly breakdown matching Figma design (Mon - Sun)
+  const [weeklyData] = useState([
+    { day: 'M', active: true, label: 'Mon' },
+    { day: 'T', active: true, label: 'Tue' },
+    { day: 'W', active: false, label: 'Wed' },
+    { day: 'T', active: true, label: 'Thu' },
+    { day: 'F', active: true, label: 'Fri' },
+    { day: 'S', active: false, label: 'Sat' },
+    { day: 'S', active: false, label: 'Sun' },
+  ]);
 
-  useEffect(() => {
-    const fetchProgress = async () => {
-      try {
-        const currentUserId = auth.currentUser?.uid; 
-        if (!currentUserId) return; 
+  const [recentLogs] = useState([
+    { id: '1', title: 'Full Body Ignition', duration: '30 Min', date: 'Yesterday, 5:30 PM', category: 'Strength' },
+    { id: '2', title: 'Core & Mobility Flow', duration: '25 Min', date: '3 days ago', category: 'Mobility' },
+    { id: '3', title: 'Campus Energy Routine', duration: '35 Min', date: '5 days ago', category: 'Cardio' }
+  ]);
 
-        const userDocRef = doc(db, 'users', currentUserId);
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) setUserData(userSnap.data());
-
-        const logsRef = collection(db, 'workout_logs');
-        const q = query(logsRef, where("userId", "==", currentUserId));
-        const querySnapshot = await getDocs(q);
-        
-        let workoutsCount = 0;
-        let totalSeconds = 0;
-        querySnapshot.forEach((d) => {
-          workoutsCount++;
-          totalSeconds += d.data().durationSeconds || 0;
-        });
-
-        setStats({
-          totalWorkouts: workoutsCount,
-          activeTimeMinutes: Math.round(totalSeconds / 60),
-        });
-
-        const progressDocRef = doc(db, 'user_progress', currentUserId);
-        const progressSnap = await getDoc(progressDocRef);
-        if (progressSnap.exists()) {
-          setUnlockedBadges(progressSnap.data().unlockedBadgeIds || []);
-        }
-      } catch (error) {
-        console.error("Error fetching progress: ", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const unsubscribe = navigation.addListener('focus', () => {
-      fetchProgress();
-    });
-
-    fetchProgress();
-    return unsubscribe;
-  }, [navigation]);
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+  const renderLogItem = ({ item }) => (
+    <View style={styles.logCard}>
+      <View style={styles.logIconBox}>
+        <Ionicons name="fitness" size={20} color={COLORS.primary} />
       </View>
-    );
-  }
-
-  // Calculate percentage for the new sleek progress bar (cap at 100%)
-  const weeklyGoal = 5;
-  const progressPercentage = Math.min((stats.totalWorkouts / weeklyGoal) * 100, 100);
+      <View style={styles.logInfo}>
+        <Text style={styles.logTitle}>{item.title}</Text>
+        <Text style={styles.logSubText}>{item.date} • {item.duration}</Text>
+      </View>
+      <View style={styles.categoryBadge}>
+        <Text style={styles.categoryBadgeText}>{item.category}</Text>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Header Section */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>
-            Hello, {userData?.name ? userData.name.split(' ')[0] : 'Student'}!
-          </Text>
-          <Text style={styles.headerSubtitle}>Keep up the momentum. You're doing great!</Text>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Your Progress</Text>
+          <Text style={styles.headerSubtitle}>Consistency is your ultimate competitive advantage.</Text>
         </View>
 
-        {/* Structured Profile Card */}
-        {userData && (
-          <View style={styles.profileCard}>
-            <View style={styles.profileRow}>
-              <Text style={styles.profileLabel}>Campus</Text>
-              <Text style={styles.profileValue}>{getCampusLabel(userData.campus)}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.profileRow}>
-              <Text style={styles.profileLabel}>Goal</Text>
-              <Text style={styles.profileValue}>{userData.goal || 'Not set'}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.profileRow}>
-              <Text style={styles.profileLabel}>Level</Text>
-              <Text style={styles.profileValue}>{userData.level || 'Not set'}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Clean Weekly Progress Bar (Replaces the weird dots) */}
-        <View style={styles.weeklyGoalCard}>
-          <View style={styles.weeklyGoalHeader}>
-            <Text style={styles.sectionTitle}>Weekly Goal</Text>
-            <Text style={styles.weeklyGoalText}>{stats.totalWorkouts} / {weeklyGoal} Workouts</Text>
-          </View>
-          <View style={styles.progressBarBackground}>
-            <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
-          </View>
-        </View>
-
-        {/* 2x2 Stats Grid in neatly boxed cards */}
-        <View style={styles.gridContainer}>
+        {/* High-Impact Stat Cards Grid */}
+        <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Workouts</Text>
+            <View style={[styles.statIconContainer, { backgroundColor: COLORS.primaryLight }]}>
+              <Ionicons name="flame" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.statValue}>{stats.currentStreak}</Text>
+            <Text style={styles.statLabel}>Day Streak</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={[styles.statIconContainer, { backgroundColor: COLORS.tealLight }]}>
+              <Ionicons name="time" size={22} color={COLORS.teal} />
+            </View>
+            <Text style={styles.statValue}>{stats.totalMinutes}</Text>
+            <Text style={styles.statLabel}>Total Mins</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={[styles.statIconContainer, { backgroundColor: '#FFF9E6' }]}>
+              <Ionicons name="trophy" size={22} color="#D4AF37" />
+            </View>
             <Text style={styles.statValue}>{stats.totalWorkouts}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Active Time</Text>
-            <Text style={styles.statValue}>{stats.activeTimeMinutes} <Text style={styles.statUnit}>mins</Text></Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Calories Burned</Text>
-            <Text style={styles.statValue}>~{stats.activeTimeMinutes * 8} <Text style={styles.statUnit}>kcal</Text></Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Current Streak</Text>
-            <Text style={styles.statValue}>{stats.totalWorkouts > 0 ? '🔥 Active' : 'None'}</Text>
+            <Text style={styles.statLabel}>Workouts</Text>
           </View>
         </View>
 
-        {/* Achievement Badges in a Horizontal Scroll */}
-        <View style={styles.achievementsSection}>
-          <Text style={styles.sectionTitle}>Achievement Badges</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScroll}>
-            {ALL_BADGES.map((badge) => {
-              const isUnlocked = unlockedBadges.includes(badge.id);
-              return (
-                <View key={badge.id} style={[styles.badgeCard, !isUnlocked && styles.badgeCardLocked]}>
-                  <Text style={[styles.badgeIcon, !isUnlocked && styles.badgeIconLocked]}>
-                    {isUnlocked ? badge.icon : '🔒'}
-                  </Text>
-                  <Text style={[styles.badgeTitle, !isUnlocked && styles.badgeTextLocked]} numberOfLines={1}>
-                    {badge.title}
-                  </Text>
-                  <Text style={styles.badgeDesc} numberOfLines={2}>{badge.description}</Text>
+        {/* Weekly Activity Chart Card (Figma Style) */}
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeaderRow}>
+            <Text style={styles.chartTitle}>Weekly Activity</Text>
+            <Text style={styles.chartSubtitle}>4 sessions this week</Text>
+          </View>
+          
+          <View style={styles.barsContainer}>
+            {weeklyData.map((item, index) => (
+              <View key={index} style={styles.barColumn}>
+                <View style={[styles.barTrack, item.active && styles.barTrackActive]}>
+                  <View style={[styles.barFill, item.active && styles.barFillActive]} />
                 </View>
-              );
-            })}
-          </ScrollView>
+                <Text style={[styles.barLabel, item.active && styles.barLabelActive]}>{item.day}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
-        {/* Action Buttons */}
-        <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('ProfileEdit')}>
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </TouchableOpacity>
+        {/* Weekly Achievement Card */}
+        <View style={styles.achievementCard}>
+          <Text style={styles.achievementTag}>WEEKLY GOAL</Text>
+          <Text style={styles.achievementTitle}>4 of 5 Sessions Completed</Text>
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: '80%' }]} />
+          </View>
+        </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={() => signOut(auth)}>
-          <Text style={styles.logoutButtonText}>Log Out</Text>
-        </TouchableOpacity>
+        {/* Recent History Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Workout History</Text>
+          <TouchableOpacity>
+            <Text style={styles.seeAllText}>View All</Text>
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          data={recentLogs}
+          keyExtractor={(item) => item.id}
+          renderItem={renderLogItem}
+          scrollEnabled={false}
+        />
 
       </ScrollView>
     </SafeAreaView>
@@ -193,72 +142,161 @@ export default function ProgressDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  
-  headerContainer: { marginTop: 10, marginBottom: 24 },
-  headerTitle: { fontSize: 32, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 },
-  headerSubtitle: { fontSize: 15, color: COLORS.textLight, fontWeight: '500' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  // Profile Card Styles
-  profileCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  profileRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  profileLabel: { fontSize: 14, color: COLORS.textLight, fontWeight: '600' },
-  profileValue: { fontSize: 14, color: COLORS.textDark, fontWeight: '700' },
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 12 },
+  header: { paddingTop: 16, marginBottom: 20 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
+  headerSubtitle: { fontSize: 13, color: COLORS.textLight, lineHeight: 18 },
 
-  // Sleek Progress Bar Styles
-  weeklyGoalCard: { marginBottom: 32 },
-  weeklyGoalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: COLORS.textDark },
-  weeklyGoalText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
-  progressBarBackground: { height: 10, backgroundColor: COLORS.surface, borderRadius: 10, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 10 },
-
-  // 2x2 Stats Grid Styles
-  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 32 },
+  statsGrid: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   statCard: {
-    width: '48%',
+    flex: 1,
     backgroundColor: COLORS.surface,
-    padding: 16,
     borderRadius: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  statLabel: { fontSize: 12, color: COLORS.textLight, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase' },
-  statValue: { fontSize: 22, fontWeight: '800', color: COLORS.textDark },
-  statUnit: { fontSize: 14, fontWeight: '600', color: COLORS.textLight },
-
-  // Achievement Badges Styles
-  achievementsSection: { marginBottom: 40 },
-  badgesScroll: { gap: 16, paddingRight: 20, marginTop: 16 },
-  badgeCard: {
-    backgroundColor: COLORS.surface,
-    padding: 16,
-    borderRadius: 16,
+    padding: 14,
     alignItems: 'center',
-    width: 140,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2
   },
-  badgeCardLocked: { backgroundColor: '#F9F9F9', borderColor: '#F0F0F0', opacity: 0.7 },
-  badgeIcon: { fontSize: 36, marginBottom: 10 },
-  badgeIconLocked: { fontSize: 28, color: '#CCCCCC' },
-  badgeTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 4 },
-  badgeTextLocked: { color: COLORS.textLight },
-  badgeDesc: { fontSize: 11, color: COLORS.textLight, textAlign: 'center', lineHeight: 16 },
-  
-  // Action Buttons
-  editButton: { backgroundColor: COLORS.textDark, padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
-  editButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
-  logoutButton: { backgroundColor: COLORS.surface, padding: 16, borderRadius: 12, alignItems: 'center' },
-  logoutButtonText: { color: '#D32F2F', fontWeight: '700', fontSize: 16 }
+  statIconContainer: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  statValue: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 2 },
+  statLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textLight, letterSpacing: 0.5 },
+
+  // Weekly Chart Styles
+  chartCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2
+  },
+  chartHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  chartTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textDark },
+  chartSubtitle: { fontSize: 12, fontWeight: '600', color: COLORS.textLight },
+  barsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 90,
+    paddingTop: 10
+  },
+  barColumn: {
+    alignItems: 'center',
+    flex: 1
+  },
+  barTrack: {
+    width: 14,
+    height: 60,
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 7,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    marginBottom: 8
+  },
+  barTrackActive: {
+    backgroundColor: COLORS.primaryLight
+  },
+  barFill: {
+    width: '100%',
+    height: '0%',
+    backgroundColor: 'transparent',
+    borderRadius: 7
+  },
+  barFillActive: {
+    height: '100%',
+    backgroundColor: COLORS.primary
+  },
+  barLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textLight
+  },
+  barLabelActive: {
+    color: COLORS.textDark
+  },
+
+  achievementCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2
+  },
+  achievementTag: { fontSize: 10, fontWeight: '800', color: COLORS.primary, letterSpacing: 1.5, marginBottom: 4 },
+  achievementTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 },
+  progressBarBackground: {
+    width: '100%',
+    height: 6,
+    backgroundColor: COLORS.surfaceLight,
+    borderRadius: 3,
+    overflow: 'hidden'
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: COLORS.primary,
+    borderRadius: 3
+  },
+
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
+  seeAllText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+
+  logCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border
+  },
+  logIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12
+  },
+  logInfo: { flex: 1 },
+  logTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 3 },
+  logSubText: { fontSize: 12, color: COLORS.textLight, fontWeight: '500' },
+  categoryBadge: {
+    backgroundColor: COLORS.surfaceLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  categoryBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.textDark, textTransform: 'uppercase' }
 });

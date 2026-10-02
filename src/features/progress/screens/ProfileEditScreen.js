@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase';
+import { supabase } from '../../../config/supabase';
 
 export default function ProfileEditScreen({ navigation }) {
   const [profile, setProfile] = useState({
@@ -16,7 +15,7 @@ export default function ProfileEditScreen({ navigation }) {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const currentUserId = auth.currentUser?.uid;
+        const currentUserId = supabase.auth.user?.id;
         if (!currentUserId) return;
 
         const userDocRef = doc(db, 'users', currentUserId);
@@ -49,15 +48,13 @@ export default function ProfileEditScreen({ navigation }) {
 
     setSaving(true);
     try {
-      const currentUserId = auth.currentUser?.uid;
-      const userDocRef = doc(db, 'users', currentUserId);
-      
-      await updateDoc(userDocRef, {
+      const currentUserId = supabase.auth.user?.id;
+      const { error } = await supabase.from('users').update({
         name: profile.name,
         campus: profile.campus.toUpperCase(),
         goal: profile.goal,
         level: profile.level
-      });
+      }).eq('id', currentUserId);
 
       Alert.alert("Success", "Profile updated successfully!", [
         { text: "Awesome", onPress: () => navigation.goBack() }

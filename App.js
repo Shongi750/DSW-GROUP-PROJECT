@@ -1,28 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-// Firebase imports
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from './src/config/firebase';
-import { LogBox } from 'react-native';
+// ✨ Import Supabase
+import { supabase } from './src/config/supabase';
 
-// Ignore specific Firebase connection warnings in development
+// Ignore specific warnings in development
 LogBox.ignoreLogs([
-  '@firebase/firestore: Firestore',
-  'WebChannelConnection RPC', 
-  'Listen stream'
+  'Non-serializable values were found in the navigation state',
 ]);
 
 // --- App Screens ---
 import WorkoutHomeScreen from './src/features/workouts/screens/WorkoutHomeScreen';
 import ActiveWorkoutSessionScreen from './src/features/workouts/screens/ActiveWorkoutSessionScreen';
-// ✨ HERE IS THE IMPORT FOR THE NEW SCREEN
 import CustomWorkoutBuilderScreen from './src/features/workouts/screens/CustomWorkoutBuilderScreen';
-
 import ProgressDashboardScreen from './src/features/progress/screens/ProgressDashboardScreen';
 import ProfileEditScreen from './src/features/progress/screens/ProfileEditScreen';
 import BuddyScreen from './src/features/buddies/screens/BuddyScreen';
@@ -49,7 +42,6 @@ function WorkoutStackScreen() {
     <WorkoutStack.Navigator screenOptions={{ headerShown: false }}>
       <WorkoutStack.Screen name="WorkoutHome" component={WorkoutHomeScreen} />
       <WorkoutStack.Screen name="ActiveWorkout" component={ActiveWorkoutSessionScreen} />
-      {/* ✨ HERE IS THE ROUTE FOR THE NEW SCREEN */}
       <WorkoutStack.Screen name="CustomWorkoutBuilder" component={CustomWorkoutBuilderScreen} />
     </WorkoutStack.Navigator>
   );
@@ -95,35 +87,66 @@ export default function App() {
   };
 
   useEffect(() => {
-    let unsubscribeSnapshot = null;
+    let profileSubscription = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (authenticatedUser) => {
-      if (authenticatedUser) {
-        setUser(authenticatedUser);
+    const handleUserSession = async (sessionUser) => {
+      if (sessionUser) {
+        setUser(sessionUser);
+
+        // 1. Initial fetch to check if campus is filled out
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('campus')
+          .eq('id', sessionUser.id)
+          .single();
+
+        setNeedsOnboarding(!data?.campus);
+        setLoading(false);
+
+        // 2. Set up unique Supabase Realtime channel to prevent collision errors
+        if (profileSubscription) {
+          supabase.removeChannel(profileSubscription);
+        }
         
-        unsubscribeSnapshot = onSnapshot(doc(db, 'users', authenticatedUser.uid), (docSnap) => {
-          if (docSnap.exists()) {
-            if (!docSnap.data().campus) {
-              setNeedsOnboarding(true);
-            } else {
-              setNeedsOnboarding(false);
+        profileSubscription = supabase
+          .channel(`profile_updates_${sessionUser.id}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${sessionUser.id}` },
+            (payload) => {
+              if (payload.new && payload.new.campus) {
+                setNeedsOnboarding(false);
+              }
             }
-          } else {
-            setNeedsOnboarding(true);
-          }
-          setLoading(false);
-        });
+          )
+          .subscribe();
+
       } else {
+        // User is logged out
         setUser(null);
         setNeedsOnboarding(false);
         setLoading(false);
-        if (unsubscribeSnapshot) unsubscribeSnapshot();
+        if (profileSubscription) {
+          supabase.removeChannel(profileSubscription);
+          profileSubscription = null;
+        }
       }
+    };
+
+    // Check for active session when app boots
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleUserSession(session?.user ?? null);
     });
 
+    // Listen for login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUserSession(session?.user ?? null);
+    });
+
+    // Cleanup listeners when app closes
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeSnapshot) unsubscribeSnapshot();
+      subscription.unsubscribe();
+      if (profileSubscription) supabase.removeChannel(profileSubscription);
     };
   }, []);
 

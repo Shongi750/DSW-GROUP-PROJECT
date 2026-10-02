@@ -9,8 +9,7 @@ import {
   ActivityIndicator
 } from "react-native";
 import PrimaryButton from "../components/PrimaryButton";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../config/firebase";
+import { supabase } from '../config/supabase'; // or wherever your supabase config is exported
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -24,13 +23,21 @@ export default function LoginScreen({ navigation }) {
     
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // THIS IS THE NEW SUPABASE CODE
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+      
+      if (error) throw error;
+      
       // No manual navigation here! App.js will handle the routing.
     } catch (error) {
       console.error(error);
-      Alert.alert("Login Failed", "Invalid email or password. Please try again.");
+      Alert.alert("Login Failed", error.message || "Invalid email or password. Please try again.");
+    } finally {
       setLoading(false);
-    } 
+    }
   };
 
   return (

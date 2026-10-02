@@ -3,11 +3,10 @@ import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, FlatList, 
   Alert, SafeAreaView, ActivityIndicator, Modal, Image 
 } from 'react-native';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase';
+import { supabase } from '../../../config/supabase';
 
 const COLORS = {
-  primary: '#BA4A0C', // Figma Burnt Orange
+  primary: '#BA4A0C', 
   teal: '#006B63',
   background: '#FFFFFF',
   surface: '#F8F9FA',
@@ -25,29 +24,59 @@ export default function CustomWorkoutBuilderScreen({ navigation }) {
   const [allExercises, setAllExercises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(true); 
   
   // Modal State
   const [isModalVisible, setIsModalVisible] = useState(false);
 
   useEffect(() => {
-    const fetchExercises = async () => {
+    const buildSmartWorkout = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'exercises'));
-        const exercisesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAllExercises(exercisesData);
+        // 1. Fetch all exercises from your Supabase database
+        const { data: exercisesData, error: exercisesError } = await supabase.from('exercises').select('*');
+        if (exercisesError) throw exercisesError;
+        setAllExercises(exercisesData || []);
+
+        // 2. Fetch user profile to match their goal
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        const userGoal = profile?.goal || 'General Fitness';
+
+        // 3. Automatically populate 4 exercises locally from your database
+        if (exercisesData && exercisesData.length > 0) {
+          const shuffled = [...exercisesData].sort(() => 0.5 - Math.random());
+          const selected = shuffled.slice(0, 4).map((ex, index) => ({
+            id: ex.id || `auto-${index}`,
+            name: (ex.name || 'Unknown').toUpperCase(),
+            category: ex.bodyPart || 'General',
+            gifUrl: ex.gifUrl || '',
+            description: Array.isArray(ex.instructions) ? ex.instructions.join(' ') : 'Standard form.',
+            sets: 3,
+            reps: '10-12',
+            rest: '60s'
+          }));
+
+          setSelectedExercises(selected);
+          setWorkoutTitle(`Your ${userGoal} Routine`);
+        }
       } catch (error) {
-        console.error("Error fetching exercises: ", error);
-        Alert.alert('Error', 'Could not load exercises from the database.');
+        console.error("Error building workout: ", error.message);
+        Alert.alert("Notice", "Could not auto-build routine. Select exercises manually using '+ Add'.");
       } finally {
         setLoading(false);
+        setIsGenerating(false);
       }
     };
 
-    fetchExercises();
+    buildSmartWorkout();
   }, []);
 
   const handleAddExercise = (exercise) => {
-    // Format it so it matches your ActiveWorkout screen requirements
     const formattedExercise = {
       id: exercise.id,
       name: (exercise.name || 'Unknown').toUpperCase(),
@@ -69,38 +98,35 @@ export default function CustomWorkoutBuilderScreen({ navigation }) {
 
   const handleSaveWorkout = async () => {
     if (!workoutTitle.trim()) {
-      Alert.alert('Hold Up', 'Please give your custom workout a catchy name!');
-      return;
+      return Alert.alert('Hold Up', 'Please give your custom workout a catchy name!');
     }
     if (selectedExercises.length === 0) {
-      Alert.alert('Wait a minute', 'You need to add at least one exercise to save a workout.');
-      return;
+      return Alert.alert('Wait a minute', 'You need to add at least one exercise to save a workout.');
     }
 
     setIsSaving(true);
     try {
-      const currentUserId = auth.currentUser?.uid;
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("You must be logged in to save a workout.");
       
       const newCustomWorkout = {
         title: workoutTitle,
         category: 'Custom',
         level: 'Mixed',
-        duration: `${selectedExercises.length * 10} Min`, // Rough estimate: 10 mins per exercise
-        creatorId: currentUserId,
+        duration: `${selectedExercises.length * 10} Min`,
+        creatorId: user.id,
         exercises: selectedExercises,
-        createdAt: serverTimestamp(),
-        isCustom: true // Flag to filter it later if needed
+        isCustom: true
       };
 
-      // Save to your workout_plans collection
-      await addDoc(collection(db, 'workout_plans'), newCustomWorkout);
+      const { error: insertError } = await supabase.from('workout_plans').insert([newCustomWorkout]);
+      if (insertError) throw insertError;
       
       Alert.alert('Success! 🎉', 'Your custom workout is live and ready to crush.', [
         { text: 'Awesome', onPress: () => navigation.goBack() }
       ]);
     } catch (error) {
-      console.error("Error saving custom workout: ", error);
-      Alert.alert('Error', 'Could not save your custom workout.');
+      Alert.alert('Error', error.message || 'Could not save your custom workout.');
     } finally {
       setIsSaving(false);
     }
@@ -116,7 +142,6 @@ export default function CustomWorkoutBuilderScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>← Back</Text>
@@ -142,7 +167,12 @@ export default function CustomWorkoutBuilderScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {selectedExercises.length === 0 ? (
+        {isGenerating ? (
+          <View style={styles.generatingBox}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.generatingText}>Assembling your routine...</Text>
+          </View>
+        ) : selectedExercises.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyBoxText}>No exercises added yet.</Text>
             <Text style={styles.emptyBoxSubtext}>Tap "+ Add" to build your routine.</Text>
@@ -167,18 +197,16 @@ export default function CustomWorkoutBuilderScreen({ navigation }) {
         )}
       </View>
 
-      {/* Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity 
           style={[styles.saveButton, selectedExercises.length === 0 && styles.saveButtonDisabled]} 
           onPress={handleSaveWorkout}
-          disabled={isSaving || selectedExercises.length === 0}
+          disabled={isSaving || selectedExercises.length === 0 || isGenerating}
         >
           {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Save Workout</Text>}
         </TouchableOpacity>
       </View>
 
-      {/* Exercise Picker Modal */}
       <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -237,6 +265,9 @@ const styles = StyleSheet.create({
   exercisesHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   addText: { color: COLORS.primary, fontWeight: '700', fontSize: 16 },
   
+  generatingBox: { backgroundColor: COLORS.surface, padding: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  generatingText: { fontSize: 15, fontWeight: '600', color: COLORS.textDark, marginTop: 16 },
+
   emptyBox: { backgroundColor: COLORS.surface, padding: 30, borderRadius: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#CCC' },
   emptyBoxText: { fontSize: 16, fontWeight: '600', color: COLORS.textDark, marginBottom: 4 },
   emptyBoxSubtext: { fontSize: 14, color: COLORS.textLight },
@@ -253,7 +284,6 @@ const styles = StyleSheet.create({
   saveButtonDisabled: { backgroundColor: '#E0E0E0' },
   saveButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
-  // Modal Styles
   modalContainer: { flex: 1, backgroundColor: COLORS.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark },

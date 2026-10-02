@@ -9,9 +9,7 @@ import {
   ActivityIndicator
 } from "react-native";
 import PrimaryButton from "../components/PrimaryButton";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../config/firebase";
+import { supabase } from '../config/supabase';
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
@@ -33,24 +31,39 @@ export default function RegisterScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        name: name,
+      // 1. Create the user in Supabase Auth
+      const { data, error: authError } = await supabase.auth.signUp({
         email: email,
-        campus: '', 
-        goal: '',   
-        level: '',  
-        createdAt: serverTimestamp()
+        password: password,
       });
+
+      if (authError) throw authError;
+
+      // 2. Insert their initial profile data into the Supabase database
+      if (data?.user) {
+        const { error: dbError } = await supabase
+          .from('profiles') // Targeting the profiles table
+          .insert([
+            {
+              id: data.user.id, // Link this profile to the new Auth user
+              name: name,
+              email: email,
+              campus: '', 
+              goal: '',   
+              level: '',  
+              // createdAt is automatically handled by Supabase default values
+            }
+          ]);
+
+        if (dbError) throw dbError;
+      }
 
       // No manual navigation here! App.js will detect the new user and teleport them automatically.
       
     } catch (error) {
       console.error(error);
       Alert.alert("Registration Error", error.message);
+    } finally {
       setLoading(false); 
     } 
   };

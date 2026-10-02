@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, SafeAreaView, ActivityIndicator } from 'react-native';
-import { collection, getDocs, getDoc, doc, addDoc, updateDoc, serverTimestamp, query, where } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase';
+
+
 
 export default function BuddyScreen({ navigation }) {
   const [buddies, setBuddies] = useState([]);
