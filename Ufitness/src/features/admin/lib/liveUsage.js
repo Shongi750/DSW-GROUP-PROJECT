@@ -1,5 +1,5 @@
-import { collection, getDocs } from 'firebase/firestore';
-import { getDb } from '../../../lib/firebase';
+import { listStudents } from '../../../lib/students';
+import { loadUsageByDay } from '../../../lib/usagePing';
 import { loadCommunityState } from '../../community/persist';
 import { loadSavedPlan } from '../../meals/lib/persist';
 import { USAGE_BY_CAMPUS, USAGE_BY_DAY, USAGE_BY_MODULE } from '../data/usageSeed';
@@ -12,18 +12,12 @@ function campusCode(value) {
 }
 
 export async function loadLiveStudents() {
-  const db = getDb();
-  if (!db) return [];
-  try {
-    const snap = await getDocs(collection(db, 'students'));
-    return snap.docs.map((item) => ({ id: item.id, ...item.data() }));
-  } catch {
-    return [];
-  }
+  return listStudents();
 }
 
 export async function loadLiveUsage() {
   const students = await loadLiveStudents();
+  const week = await loadUsageByDay();
   const meal = await loadSavedPlan();
   const community = await loadCommunityState();
   const liveCampus = CAMPUSES.map((label) => ({
@@ -36,10 +30,11 @@ export async function loadLiveUsage() {
 
   return {
     live: hasLive,
+    weekLive: Boolean(week),
     students,
     activeUsers: hasLive ? students.length : USAGE_BY_CAMPUS.reduce((sum, item) => sum + item.users, 0),
     byCampus: hasLive ? liveCampus : USAGE_BY_CAMPUS,
-    byDay: USAGE_BY_DAY,
+    byDay: week || USAGE_BY_DAY,
     byModule: hasLive
       ? [
           { label: 'Workout', users: students.filter((row) => row.fitnessGoal || row.workoutLocation).length },

@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getProgram } from '../data/programs';
 import CatalogHeader from '../components/catalogheader';
 import SectionTitle from '../components/sectiontitle';
 import PrimaryButton from '../components/button';
-import { GlassCard, GlassScreen } from '../components/glass';
+import { GlassScreen } from '../components/glass';
+import { OrangeStartBar } from '../components/startcard';
+import WorkoutListRow from '../components/workoutlistrow';
 import { useApp } from '../context/AppContext';
 import { lookupExercise } from '../lib/exercisedb';
 import { programMoves } from '../lib/session';
+import { buildSession, rememberExercises, saveSessionOffline, loadSavedSessions, removeSavedSession } from '../lib/sessionApi';
 
 export default function ExercisesScreen({ navigation, route }) {
   const {
@@ -29,9 +32,38 @@ export default function ExercisesScreen({ navigation, route }) {
   const [busy, setBusy] = useState(false);
   const [apiNote, setApiNote] = useState('');
   const program = route.params?.programId ? getProgram(route.params.programId) : null;
+  const sessionId = route.params?.sessionId || null;
+  const [session, setSession] = useState(null);
+  const [sessionError, setSessionError] = useState('');
+  const [sessionSaved, setSessionSaved] = useState(false);
 
   useEffect(() => {
-    if (program) return undefined;
+    if (!sessionId) return undefined;
+    let cancelled = false;
+    setBusy(true);
+    setSessionError('');
+    (async () => {
+      try {
+        const saved = await loadSavedSessions();
+        if (cancelled) return;
+        setSessionSaved(Boolean(saved[sessionId]));
+        const built = await buildSession(sessionId, { tier: profile.equipmentTier || 'bodyweight' });
+        if (cancelled) return;
+        rememberExercises(built.exercises);
+        setSession(built);
+      } catch (error) {
+        if (!cancelled) setSessionError(error.message || 'Could not build this session.');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, profile.equipmentTier]);
+
+  useEffect(() => {
+    if (program || sessionId) return undefined;
     const needle = query.trim();
     if (needle.length < 2 && !bodyPart) {
       setRemoteRows([]);
@@ -51,9 +83,10 @@ export default function ExercisesScreen({ navigation, route }) {
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [query, bodyPart, hasApiKey, program, searchRemote, loadBodyPart]);
+  }, [query, bodyPart, hasApiKey, program, sessionId, searchRemote, loadBodyPart]);
 
   const list = useMemo(() => {
+    if (session?.exercises?.length) return session.exercises;
     if (program) {
       return program.exerciseIds.map((id) => lookupExercise(id, catalog) || getExercise(id)).filter(Boolean);
     }
@@ -64,34 +97,50 @@ export default function ExercisesScreen({ navigation, route }) {
     return base.filter((item) =>
       `${item.name} ${item.focus?.join(' ') || ''} ${item.equipment || ''}`.toLowerCase().includes(needle)
     );
-  }, [program, catalog, query, getExercise, remoteRows]);
+  }, [session, program, catalog, query, getExercise, remoteRows]);
 
   const startAll = () => {
     if (!list.length) return;
+    if (session?.exercises) rememberExercises(session.exercises);
     navigation.navigate('Player', {
       exerciseIds: list.map((item) => item.id),
-      moves: program ? programMoves(program, getExercise) : programMoves({ exerciseIds: list.map((item) => item.id) }, getExercise),
+      moves: session?.moves || (program ? programMoves(program, getExercise) : programMoves({ exerciseIds: list.map((item) => item.id) }, getExercise)),
       startIndex: 0,
-      programId: program?.id,
+      programId: session?.id || program?.id,
     });
+  };
+
+  const downloadSession = async () => {
+    if (!session) return;
+    if (sessionSaved) {
+      await removeSavedSession(session.id);
+      setSessionSaved(false);
+      return;
+    }
+    await saveSessionOffline(session);
+    setSessionSaved(true);
   };
 
   return (
     <GlassScreen>
-      {program ? (
+      {program || session ? (
         <TouchableOpacity onPress={() => navigation.goBack()} className="mb-1 flex-row items-center gap-1">
-          <Ionicons name="chevron-back" size={20} color="#1A1A1A" />
+          <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
           <Text className="font-semibold text-ink">Programs</Text>
         </TouchableOpacity>
       ) : (
         <CatalogHeader placeholder="Search ExerciseDB..." activeId="exercises" onQueryChange={setQuery} />
       )}
 
-      <SectionTitle className={program ? 'mt-2' : 'mt-[18px]'}>
-        {program ? program.name : 'Exercises'}
+      <SectionTitle className={program || session ? 'mt-2' : 'mt-[18px]'}>
+        {session?.name || program?.name || 'Exercises'}
       </SectionTitle>
       <Text className="-mt-1 mb-3 text-[13px] text-muted">
-        {program
+        {sessionError
+          ? sessionError
+          : session
+          ? `${list.length} moves · ${session.source === 'exercisedb' ? 'ExerciseDB' : 'exercise library'} · ${session.meta || 'tap one to preview'}`
+          : program
           ? `${list.length} moves • tap one to preview`
           : catalogLoading
             ? 'Loading exercise photos…'
@@ -103,7 +152,7 @@ export default function ExercisesScreen({ navigation, route }) {
                   : catalogError || `${list.length} local moves`)}
       </Text>
 
-      {!program ? (
+      {!program && !session ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
           <View className="flex-row gap-2 pb-2">
             <TouchableOpacity
@@ -131,41 +180,38 @@ export default function ExercisesScreen({ navigation, route }) {
         </ScrollView>
       ) : null}
 
-      {busy ? <ActivityIndicator color="#BA4A0C" className="mb-3" /> : null}
+      {busy ? <ActivityIndicator color="#FF6A00" className="mb-3" /> : null}
 
       {list.map((exercise) => {
-        const done = profile.completedExerciseIds.includes(exercise.id);
+        const level =
+          (exercise.duration || 40) <= 30 ? 'Easy' : (exercise.duration || 40) <= 45 ? 'Medium' : 'Hard';
         return (
-          <GlassCard
+          <WorkoutListRow
             key={exercise.id}
-            className="mb-2.5"
+            image={exercise.gifUrl}
+            title={exercise.name}
+            meta={`${exercise.duration || 40}s · ${(exercise.focus || []).join(', ') || 'move'}`}
+            level={level}
             onPress={() =>
-              navigation.navigate('ExerciseDetail', { exerciseId: exercise.id, programId: program?.id })
+              navigation.navigate('ExerciseDetail', { exerciseId: exercise.id, programId: session?.id || program?.id })
             }
-          >
-            <View className="flex-row items-center gap-3">
-              {exercise.gifUrl ? (
-                <Image source={{ uri: exercise.gifUrl }} className="h-11 w-11 rounded-xl bg-accent/20" />
-              ) : (
-                <View className="h-11 w-11 items-center justify-center rounded-xl bg-accent/20">
-                  <Ionicons name="accessibility" size={22} color="#BA4A0C" />
-                </View>
-              )}
-              <View className="flex-1">
-                <Text className="text-base font-bold text-ink">{exercise.name}</Text>
-                <Text className="mt-0.5 text-[13px] text-muted">
-                  {exercise.duration}s • {(exercise.focus || []).join(', ')}
-                </Text>
-              </View>
-              {done ? <Ionicons name="checkmark-circle" size={20} color="#BA4A0C" /> : null}
-              <Ionicons name="chevron-forward" size={18} color="#8E8E93" />
-            </View>
-          </GlassCard>
+          />
         );
       })}
 
-      <View className="mt-3">
-        <PrimaryButton title={program ? 'Start program' : 'Start first exercise'} onPress={startAll} />
+      <View className="mt-3 gap-3">
+        {session ? (
+          <PrimaryButton
+            title={sessionSaved ? 'Remove download' : 'Download session'}
+            icon={sessionSaved ? 'trash-outline' : 'download-outline'}
+            onPress={downloadSession}
+          />
+        ) : null}
+        <OrangeStartBar
+          title={session || program ? 'Start course' : 'Start first exercise'}
+          onPress={startAll}
+          disabled={!list.length}
+        />
       </View>
     </GlassScreen>
   );

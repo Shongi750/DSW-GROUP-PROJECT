@@ -1,250 +1,302 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  Alert,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from "react-native";
-import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../../context/AppContext";
-import { useTheme } from "../../context/ThemeContext";
+import { useTheme, radius, display } from "../../context/ThemeContext";
+import AuthBackdrop, { GlassSheet } from "./AuthBackdrop";
+
+const UJ_LOGO = require("../../../assets/uj-gym-logo.png");
 import { friendlyAuthError } from "../../lib/authErrors";
-import { assertUjStudentAccount } from "../../lib/ujEmail";
+import { accountFromStudentOrEmail } from "../../lib/ujEmail";
+import { forgetLoginEmail, recallLoginEmail, rememberLoginEmail } from "../../lib/rememberLogin";
+import {
+  biometricLabel,
+  canUseBiometrics,
+  isUnlockEnabled,
+  promptEnableAfterLogin,
+  unlockCredentials,
+} from "../../lib/biometrics";
 
 export default function LoginScreen({ navigation }) {
   const { login, resetPassword } = useApp();
   const { colors } = useTheme();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("ufitness123");
+  const [studentNumber, setStudentNumber] = useState("");
+  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [bioLabel, setBioLabel] = useState("");
+
+  useEffect(() => {
+    recallLoginEmail().then((saved) => {
+      if (!saved) return;
+      setStudentNumber(saved);
+      setRememberMe(true);
+    });
+    Promise.all([canUseBiometrics(), isUnlockEnabled(), biometricLabel()]).then(
+      ([can, on, label]) => {
+        if (can && on) setBioLabel(label);
+      }
+    );
+  }, []);
+
+  const resolveAccount = () => accountFromStudentOrEmail(studentNumber);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      return Alert.alert("Please fill in all fields.");
+    if (!String(studentNumber).trim() || !password) {
+      return setNotice("Enter your 9-digit student number and password.");
     }
+    let account;
     try {
-      assertUjStudentAccount({ email });
+      account = resolveAccount();
     } catch (error) {
-      return Alert.alert("UJ student email required", error.message);
+      return setNotice(error.message);
     }
+    setNotice("");
     setBusy(true);
     try {
-      await login({ email, password });
+      const signedIn = await login({ email: account.email, password });
+      if (!signedIn) return;
+      if (rememberMe) await rememberLoginEmail(account.studentNumber);
+      else await forgetLoginEmail();
+      await promptEnableAfterLogin({ email: account.email, password });
     } catch (error) {
-      Alert.alert("Could not sign in", friendlyAuthError(error));
+      setNotice(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
   };
 
   const handleForgot = async () => {
-    if (!email) {
-      return Alert.alert("Enter your student email first.");
+    if (!String(studentNumber).trim()) {
+      return setNotice("Enter your 9-digit student number first.");
     }
+    let account;
     try {
-      assertUjStudentAccount({ email });
+      account = resolveAccount();
     } catch (error) {
-      return Alert.alert("UJ student email required", error.message);
+      return setNotice(error.message);
     }
+    setNotice("");
     setBusy(true);
     try {
-      await resetPassword(email);
-      Alert.alert("Check your email", "If that account exists, a reset link was sent.");
+      await resetPassword(account.email);
+      // Do not confirm whether the account exists.
+      setNotice("If that student number has an account, a reset link was sent to the matching UJ inbox.");
     } catch (error) {
-      Alert.alert("Could not send reset email", friendlyAuthError(error));
+      setNotice(friendlyAuthError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBiometric = async () => {
+    setNotice("");
+    setBusy(true);
+    try {
+      const creds = await unlockCredentials();
+      if (!creds?.email || !creds.password) {
+        return setNotice("Sign in with your student number and password once before biometric unlock can be used.");
+      }
+      await login({ email: creds.email, password: creds.password });
+    } catch (error) {
+      setNotice(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1, minHeight: 0, backgroundColor: colors.background }}
-      contentContainerStyle={[styles.screenContainer, { backgroundColor: colors.background }]}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator
-    >
-      {/* Top Logo & Title */}
-      <View style={styles.headerSection}>
-        <View style={styles.logoCircle}>
-          <FontAwesome5 name="dumbbell" size={32} color="#FFFFFF" />
-        </View>
-        <Text style={[styles.appTitle, { color: colors.brand }]}>UFitness</Text>
-      </View>
-
-      {/* White Card Container */}
-      <View style={[styles.card, { backgroundColor: colors.card }]}>
-        <Text style={[styles.cardTitle, { color: colors.text }]}>Welcome Back</Text>
-        <Text style={[styles.cardSubtitle, { color: colors.muted }]}>
-          Sign in with your UJ student email (student number@student.uj.ac.za).
-        </Text>
-
-        {/* Email Input with Professional Icon */}
-        <View style={[styles.inputWrapper, { backgroundColor: colors.input, borderColor: colors.border }]}>
-          <Ionicons
-            name="mail-outline"
-            size={22}
-            color="#8B4513"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="223222181@student.uj.ac.za"
-            placeholderTextColor={colors.muted}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
+    <AuthBackdrop>
+      <ScrollView
+        style={{ flex: 1, minHeight: 0, backgroundColor: "transparent" }}
+        contentContainerStyle={styles.screenContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
+      >
+        <View style={styles.brandHero}>
+          <Image source={UJ_LOGO} style={styles.ujLogo} resizeMode="contain" />
+          <View style={styles.wordmarkRow}>
+            <Text style={styles.appTitleWhite}>U</Text>
+            <Text style={[styles.appTitleAccent, { color: colors.accent }]}>FITNESS</Text>
+          </View>
+          <Text style={styles.brandLine}>Campus fitness. One account.</Text>
         </View>
 
-        {/* Password Input with Professional Icon */}
-        <View style={[styles.inputWrapper, { backgroundColor: colors.input, borderColor: colors.border }]}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={22}
-            color="#8B4513"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Password"
-            placeholderTextColor={colors.muted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-        </View>
+        <View style={styles.photoAir} />
 
-        {/* Remember Me + Forgot Password */}
-        <View style={styles.rowContainer}>
-          <TouchableOpacity
-            style={styles.rememberMeRow}
-            onPress={() => setRememberMe(!rememberMe)}
-          >
-            <View
-              style={[styles.checkbox, rememberMe && styles.checkboxChecked]}
-            >
-              {rememberMe && (
-                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-              )}
+        <GlassSheet>
+          <Text style={styles.cardSubtitle}>
+            9-digit UJ student number. Train · eat · connect.
+          </Text>
+
+          <View style={styles.inputWrapper}>
+            <Ionicons name="school-outline" size={20} color={colors.accent} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="9-digit student number"
+              placeholderTextColor="#8A8A8A"
+              value={studentNumber}
+              onChangeText={(value) => setStudentNumber(value.replace(/\D/g, "").slice(0, 9))}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="number-pad"
+              inputMode="numeric"
+              maxLength={9}
+              autoComplete="username"
+              textContentType="username"
+            />
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Ionicons name="lock-closed-outline" size={20} color={colors.accent} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Your password"
+              placeholderTextColor="#8A8A8A"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              textContentType="password"
+            />
+          </View>
+
+          <View style={styles.rowContainer}>
+            <TouchableOpacity style={styles.rememberMeRow} onPress={() => setRememberMe(!rememberMe)}>
+              <View
+                style={[
+                  styles.checkbox,
+                  rememberMe && { backgroundColor: colors.accent, borderColor: colors.accent },
+                ]}
+              >
+                {rememberMe ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : null}
+              </View>
+              <Text style={styles.rememberText}>Remember me</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleForgot} disabled={busy}>
+              <Text style={[styles.forgotText, { color: colors.accentBright || colors.accent }]}>Forgot?</Text>
+            </TouchableOpacity>
+          </View>
+
+          {notice ? (
+            <View style={styles.notice}>
+              <Text style={styles.noticeText}>{notice}</Text>
             </View>
-            <Text style={[styles.rememberText, { color: colors.muted }]}>Remember me</Text>
+          ) : null}
+
+          <TouchableOpacity style={styles.whiteCta} onPress={handleLogin} disabled={busy} activeOpacity={0.9}>
+            {busy ? (
+              <ActivityIndicator color="#0A0A0A" />
+            ) : (
+              <>
+                <Text style={styles.whiteCtaText}>Sign in</Text>
+                <View style={[styles.ctaArrow, { backgroundColor: colors.accent }]}>
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                </View>
+              </>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleForgot} disabled={busy}>
-            <Text style={[styles.forgotText, { color: colors.brand }]}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </View>
+          {bioLabel ? (
+            <TouchableOpacity style={styles.bioButton} onPress={handleBiometric} disabled={busy}>
+              <Ionicons name="finger-print" size={20} color={colors.accent} />
+              <Text style={[styles.bioButtonText, { color: colors.accent }]}>Unlock with {bioLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
 
-        {/* Login Button */}
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={busy}>
-          {busy ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Register Link */}
-        <View style={styles.registerRow}>
-          <Text style={[styles.noAccountText, { color: colors.muted }]}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-            <Text style={styles.registerLink}>Register</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </ScrollView>
+          <View style={styles.registerRow}>
+            <Text style={styles.noAccountText}>or </Text>
+            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
+              <Text style={[styles.registerLink, { color: colors.accentBright || colors.accent }]}>Create account</Text>
+            </TouchableOpacity>
+          </View>
+        </GlassSheet>
+      </ScrollView>
+    </AuthBackdrop>
   );
 }
 
 const styles = StyleSheet.create({
   screenContainer: {
     flexGrow: 1,
-    backgroundColor: "#F5F5F5",
-    paddingHorizontal: 28,
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingTop: 52,
+    paddingBottom: 36,
+    justifyContent: "flex-end",
   },
-  headerSection: {
-    alignItems: "center",
-    marginBottom: 36,
-  },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#E67E45",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  appTitle: {
-    fontSize: 34,
-    fontWeight: "600",
-    color: "#8B4513",
-    letterSpacing: 0.5,
-    marginTop: 12,
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    paddingHorizontal: 28,
-    paddingVertical: 36,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  cardTitle: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#1A1A1A",
-    textAlign: "center",
+  brandHero: {
+    alignItems: "flex-start",
+    gap: 10,
     marginBottom: 8,
   },
+  ujLogo: {
+    width: 56,
+    height: 56,
+    marginBottom: 4,
+  },
+  wordmarkRow: {
+    flexDirection: "row",
+  },
+  appTitleWhite: {
+    ...display,
+    fontSize: 42,
+    letterSpacing: 1.5,
+    color: "#FFFFFF",
+  },
+  appTitleAccent: {
+    ...display,
+    fontSize: 42,
+    letterSpacing: 1.5,
+  },
+  brandLine: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.62)",
+    marginTop: 2,
+  },
+  photoAir: {
+    flexGrow: 1,
+    minHeight: 160,
+  },
   cardSubtitle: {
-    fontSize: 17,
-    color: "#665952",
-    textAlign: "center",
-    lineHeight: 24,
-    marginBottom: 32,
-    paddingHorizontal: 10,
+    fontSize: 14,
+    color: "#C9C9C9",
+    lineHeight: 20,
+    marginBottom: 18,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#E5D4CD",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginBottom: 18,
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   inputIcon: {
     marginRight: 10,
   },
   input: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 15,
     fontSize: 16,
-    color: "#333333",
+    color: "#FFFFFF",
   },
   rowContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 18,
   },
   rememberMeRow: {
     flexDirection: "row",
@@ -254,43 +306,73 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderWidth: 1.5,
-    borderColor: "#C4A89C",
-    borderRadius: 4,
+    borderColor: "rgba(255,255,255,0.35)",
+    borderRadius: 6,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFF",
-  },
-  checkboxChecked: {
-    backgroundColor: "#8B4513",
-    borderColor: "#8B4513",
   },
   rememberText: {
-    fontSize: 15,
-    color: "#5C4F47",
+    fontSize: 14,
     marginLeft: 8,
+    color: "#C9C9C9",
   },
   forgotText: {
-    fontSize: 15,
-    color: "#8B4513",
-    fontWeight: "600",
-  },
-  loginButton: {
-    backgroundColor: "#8B4513",
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
-    marginBottom: 28,
-    shadowColor: "#8B4513",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  loginButtonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: "700",
-    letterSpacing: 0.5,
+  },
+  notice: {
+    borderWidth: 1,
+    borderRadius: radius.input,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    backgroundColor: "rgba(255,106,0,0.16)",
+    borderColor: "rgba(255,106,0,0.45)",
+  },
+  noticeText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: "#FFB27A",
+  },
+  whiteCta: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.pill,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  whiteCtaText: {
+    color: "#0A0A0A",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+  },
+  ctaArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bioButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,106,0,0.55)",
+    borderRadius: radius.pill,
+    paddingVertical: 14,
+    marginBottom: 14,
+  },
+  bioButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
   },
   registerRow: {
     flexDirection: "row",
@@ -298,12 +380,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   noAccountText: {
-    fontSize: 16,
-    color: "#5C4F47",
+    fontSize: 14,
+    color: "#C9C9C9",
   },
   registerLink: {
-    fontSize: 16,
-    color: "#2E4A7D",
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

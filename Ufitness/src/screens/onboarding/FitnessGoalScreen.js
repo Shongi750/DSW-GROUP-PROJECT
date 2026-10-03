@@ -24,14 +24,15 @@ import { YEARS_OF_STUDY, facultyForCourse, searchUjCourses } from '../../data/uj
 import { GENDER_OPTIONS } from '../../data/genderOptions';
 import { PROFILE_AVATARS } from '../../data/profileAvatars';
 import { useTheme } from '../../context/ThemeContext';
+import { personName } from '../../lib/ujEmail';
 import { weeklyForFunding } from '../../features/meals/lib/budget';
 import { loadSavedPlan, saveSavedPlan } from '../../features/meals/lib/persist';
 
-const BRAND = '#8C3A12';
-const ACCENT = '#E8722C';
-const TEXT = '#1F2933';
-const MUTED = '#6B7280';
-const LINE = '#E8D5C8';
+const BRAND = '#FF6A00';
+const ACCENT = '#FF6A00';
+const TEXT = '#FFFFFF';
+const MUTED = '#A3A3A3';
+const LINE = '#262626';
 
 const GOALS = [
   { id: 'weight', label: 'Weight mgmt', icon: 'body-outline' },
@@ -86,7 +87,7 @@ export default function FitnessGoalScreen({
   completeOnboarding,
   editing = false,
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [goal, setGoal] = useState(GOAL_BY_VALUE[data?.fitnessGoal] || 'weight');
   const [experience, setExperience] = useState(data?.experienceLevel || '');
   const [location, setLocation] = useState(data?.workoutPreference || '');
@@ -98,12 +99,15 @@ export default function FitnessGoalScreen({
   const [photoMode, setPhotoMode] = useState(() => photoModeFromUri(data?.avatarUrl));
   const [budget, setBudget] = useState(parseBudget(data));
   const [funding, setFunding] = useState(data?.fundingType || '');
+  const [name, setName] = useState(personName(data?.name) || '');
+  const [notice, setNotice] = useState('');
 
   const isEditing = Boolean(editing || data?.onboardingComplete);
 
   const payload = () => {
     const weekly = weeklyForFunding(budget);
     return {
+      name: personName(name),
       fitnessGoal: GOALS.find((item) => item.id === goal)?.label || 'General fitness',
       experienceLevel: experience,
       workoutPreference: location,
@@ -122,32 +126,45 @@ export default function FitnessGoalScreen({
     };
   };
 
+  const missingFields = () => {
+    const missing = [];
+    if (!personName(name)) missing.push('your name');
+    if (!goal) missing.push('a fitness goal');
+    if (!experience) missing.push('your experience level');
+    if (!location) missing.push('a preferred location');
+    if (!course) missing.push('your UJ course');
+    if (!yearOfStudy) missing.push('your year of study');
+    if (!avatarUrl) missing.push('a profile picture');
+    if (!funding) missing.push('a funding source');
+    return missing;
+  };
+
   const finish = async (requireGoal) => {
-    if (requireGoal && !goal) {
-      Alert.alert('Please select a fitness goal before continuing.');
-      return;
+    if (requireGoal) {
+      const missing = missingFields();
+      if (missing.length) {
+        const list =
+          missing.length === 1
+            ? missing[0]
+            : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
+        setNotice(`Choose ${list} before continuing.`);
+        return;
+      }
     }
-    if (requireGoal && !course) {
-      Alert.alert('Please select your UJ course of study.');
-      return;
+    setNotice('');
+    try {
+      const patch = payload();
+      const saved = await loadSavedPlan();
+      await saveSavedPlan({ ...(saved || {}), budget: patch.weeklyFoodBudget });
+      if (isEditing) {
+        updateFields?.(patch);
+        if (navigation.canGoBack()) navigation.goBack();
+        return;
+      }
+      await completeOnboarding?.(patch);
+    } catch (error) {
+      setNotice(error?.message || 'Could not save setup. Try again.');
     }
-    if (requireGoal && !yearOfStudy) {
-      Alert.alert('Please select your year of study.');
-      return;
-    }
-    if (requireGoal && !avatarUrl) {
-      Alert.alert('Choose your own photo or an avatar for your profile.');
-      return;
-    }
-    const patch = payload();
-    const saved = await loadSavedPlan();
-    await saveSavedPlan({ ...(saved || {}), budget: patch.weeklyFoodBudget });
-    if (isEditing) {
-      updateFields?.(patch);
-      if (navigation.canGoBack()) navigation.goBack();
-      return;
-    }
-    await completeOnboarding?.(patch);
   };
 
   return (
@@ -160,11 +177,11 @@ export default function FitnessGoalScreen({
         >
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
-        <View style={styles.progressTrack}>
+        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
           <View style={styles.progressFill} />
-          <View style={[styles.progressDot, styles.progressDotOn]} />
-          <View style={[styles.progressDot, styles.progressDotMid]} />
-          <View style={[styles.progressDot, styles.progressDotEnd]} />
+          <View style={[styles.progressDot, styles.progressDotOn, { backgroundColor: colors.accent }]} />
+          <View style={[styles.progressDot, styles.progressDotMid, { backgroundColor: colors.border }]} />
+          <View style={[styles.progressDot, styles.progressDotEnd, { backgroundColor: colors.border }]} />
         </View>
         {isEditing ? (
           <View style={styles.iconBtn} />
@@ -185,6 +202,15 @@ export default function FitnessGoalScreen({
         <Text style={[styles.subtitle, { color: colors.muted }]}>
           Select your primary objective to help us tailor your experience at UJ.
         </Text>
+        <Text style={[styles.fieldLabel, { color: colors.muted }]}>YOUR NAME</Text>
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          placeholder="Name you want on Home"
+          placeholderTextColor={colors.muted}
+          autoCapitalize="words"
+          style={[styles.nameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+        />
 
         <View style={styles.grid}>
           {GOALS.map((item) => {
@@ -196,11 +222,19 @@ export default function FitnessGoalScreen({
                 style={[
                   styles.goalTile,
                   { backgroundColor: colors.card, borderColor: colors.border },
-                  selected && styles.goalTileOn,
+                  selected && { backgroundColor: 'rgba(255,106,0,0.14)', borderColor: colors.accent },
                 ]}
               >
-                <Ionicons name={item.icon} size={28} color={selected ? BRAND : ACCENT} />
-                <Text style={[styles.goalLabel, { color: colors.text }, selected && styles.goalLabelOn]}>{item.label}</Text>
+                <Ionicons name={item.icon} size={28} color={selected ? colors.accent : colors.muted} />
+                <Text
+                  style={[
+                    styles.goalLabel,
+                    { color: colors.text },
+                    selected && { color: isDark ? '#FF8A1A' : '#B33E0A' },
+                  ]}
+                >
+                  {item.label}
+                </Text>
               </Pressable>
             );
           })}
@@ -232,10 +266,17 @@ export default function FitnessGoalScreen({
                 style={[
                   styles.campusChip,
                   { borderColor: colors.border, backgroundColor: colors.card },
-                  selected && styles.campusChipOn,
+                  selected && { backgroundColor: colors.accent, borderColor: colors.accent },
                 ]}
               >
-                <Text style={[styles.campusText, selected && styles.campusTextOn]}>{item.label}</Text>
+                <Text
+                  style={[
+                    styles.campusText,
+                    { color: selected ? '#FFFFFF' : colors.muted },
+                  ]}
+                >
+                  {item.label}
+                </Text>
               </Pressable>
             );
           })}
@@ -265,11 +306,14 @@ export default function FitnessGoalScreen({
                 style={[
                   styles.genderChip,
                   { borderColor: colors.border, backgroundColor: colors.card },
-                  selected && styles.campusChipOn,
+                  selected && { backgroundColor: colors.accent, borderColor: colors.accent },
                 ]}
               >
-                <Ionicons name={item.icon} size={16} color={selected ? '#fff' : BRAND} />
-                <Text style={[styles.genderChipText, selected && styles.campusTextOn]} numberOfLines={2}>
+                <Ionicons name={item.icon} size={16} color={selected ? '#fff' : colors.muted} />
+                <Text
+                  style={[styles.genderChipText, { color: selected ? '#FFFFFF' : colors.muted }]}
+                  numberOfLines={2}
+                >
                   {item.label}
                 </Text>
               </Pressable>
@@ -305,7 +349,27 @@ export default function FitnessGoalScreen({
           onSelect={setFunding}
         />
 
-        <Pressable style={styles.continueBtn} onPress={() => finish(true)}>
+        {notice ? (
+          <View
+            style={[
+              styles.notice,
+              {
+                backgroundColor: isDark ? 'rgba(255,106,0,0.14)' : '#FDECEC',
+                borderColor: isDark ? 'rgba(255,106,0,0.45)' : '#E7B4B4',
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <Text style={[styles.noticeText, { color: isDark ? '#FFB27A' : '#8C2F2F' }]}>
+              {notice}
+            </Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          style={[styles.continueBtn, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
+          onPress={() => finish(true)}
+        >
           <Text style={styles.continueText}>{isEditing ? 'Save' : 'Continue'}</Text>
           <Ionicons name={isEditing ? 'checkmark' : 'arrow-forward'} size={18} color="#fff" />
         </Pressable>
@@ -316,7 +380,7 @@ export default function FitnessGoalScreen({
 
 function SelectField({ label, placeholder, value, options, onSelect }) {
   const [open, setOpen] = useState(false);
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   return (
     <View style={styles.fieldBlock}>
       <Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text>
@@ -330,12 +394,15 @@ function SelectField({ label, placeholder, value, options, onSelect }) {
         <Ionicons name="chevron-down" size={18} color={colors.muted} />
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <View style={[styles.sheet, { backgroundColor: colors.card }]}>
+        <Pressable
+          style={[styles.overlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.35)' }]}
+          onPress={() => setOpen(false)}
+        >
+          <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {options.map((option) => (
               <Pressable
                 key={option}
-                style={styles.sheetRow}
+                style={[styles.sheetRow, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   onSelect(option);
                   setOpen(false);
@@ -354,7 +421,7 @@ function SelectField({ label, placeholder, value, options, onSelect }) {
 function CourseSearchField({ label, placeholder, value, onSelect }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const matches = searchUjCourses(query);
   const faculty = facultyForCourse(value);
 
@@ -384,8 +451,14 @@ function CourseSearchField({ label, placeholder, value, onSelect }) {
         <Ionicons name="search" size={18} color={colors.muted} />
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <Pressable style={[styles.courseSheet, { backgroundColor: colors.card }]} onPress={() => {}}>
+        <Pressable
+          style={[styles.overlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.35)' }]}
+          onPress={() => setOpen(false)}
+        >
+          <Pressable
+            style={[styles.courseSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {}}
+          >
             <TextInput
               value={query}
               onChangeText={setQuery}
@@ -401,7 +474,7 @@ function CourseSearchField({ label, placeholder, value, onSelect }) {
               {matches.map((item) => (
                 <Pressable
                   key={`${item.faculty}:${item.name}`}
-                  style={styles.sheetRow}
+                  style={[styles.sheetRow, { borderBottomColor: colors.border }]}
                   onPress={() => {
                     onSelect(item.name);
                     setOpen(false);
@@ -457,10 +530,10 @@ function PhotoPicker({ avatarUrl, photoMode, onMode, onPickUri }) {
           style={[
             styles.photoChoice,
             { backgroundColor: colors.card, borderColor: colors.border },
-            photoMode === 'upload' && styles.photoChoiceOn,
+            photoMode === 'upload' && { backgroundColor: 'rgba(255,106,0,0.14)', borderColor: colors.accent },
           ]}
         >
-          <Ionicons name="camera-outline" size={22} color={photoMode === 'upload' ? BRAND : ACCENT} />
+          <Ionicons name="camera-outline" size={22} color={photoMode === 'upload' ? colors.accent : colors.muted} />
           <Text style={[styles.photoChoiceText, { color: colors.text }]}>Upload my photo</Text>
         </Pressable>
         <Pressable
@@ -473,10 +546,10 @@ function PhotoPicker({ avatarUrl, photoMode, onMode, onPickUri }) {
           style={[
             styles.photoChoice,
             { backgroundColor: colors.card, borderColor: colors.border },
-            photoMode === 'avatar' && styles.photoChoiceOn,
+            photoMode === 'avatar' && { backgroundColor: 'rgba(255,106,0,0.14)', borderColor: colors.accent },
           ]}
         >
-          <Ionicons name="happy-outline" size={22} color={photoMode === 'avatar' ? BRAND : ACCENT} />
+          <Ionicons name="happy-outline" size={22} color={photoMode === 'avatar' ? colors.accent : colors.muted} />
           <Text style={[styles.photoChoiceText, { color: colors.text }]}>Use an avatar</Text>
         </Pressable>
       </View>
@@ -503,6 +576,7 @@ function PhotoPicker({ avatarUrl, photoMode, onMode, onPickUri }) {
 }
 
 function BudgetSlider({ value, onChange }) {
+  const { colors } = useTheme();
   const min = 500;
   const max = 10000;
   const trackRef = useRef(null);
@@ -569,16 +643,21 @@ function BudgetSlider({ value, onChange }) {
       style={styles.sliderHit}
       {...pan.panHandlers}
     >
-      <View style={styles.sliderTrack}>
-        <View style={[styles.sliderFill, { width: `${ratio * 100}%` }]} />
-        <View style={[styles.sliderThumb, { left: `${ratio * 100}%` }]} />
+      <View style={[styles.sliderTrack, { backgroundColor: colors.border }]}>
+        <View style={[styles.sliderFill, { width: `${ratio * 100}%`, backgroundColor: colors.accent }]} />
+        <View
+          style={[
+            styles.sliderThumb,
+            { left: `${ratio * 100}%`, backgroundColor: colors.accent },
+          ]}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
+  screen: { flex: 1, backgroundColor: '#0A0A0A' },
   scroll: {
     flex: 1,
     minHeight: 0,
@@ -596,7 +675,6 @@ const styles = StyleSheet.create({
   progressTrack: {
     flex: 1,
     height: 4,
-    backgroundColor: '#F0E4DC',
     borderRadius: 99,
     justifyContent: 'center',
   },
@@ -613,64 +691,69 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#F0E4DC',
     top: -2,
   },
-  progressDotOn: { left: '32%', backgroundColor: ACCENT },
+  progressDotOn: { left: '32%' },
   progressDotMid: { left: '64%' },
   progressDotEnd: { right: 0 },
   skip: { color: ACCENT, fontWeight: '800', fontSize: 13, letterSpacing: 0.6 },
   content: { paddingHorizontal: 20, paddingBottom: 36 },
-  title: { fontSize: 28, fontWeight: '800', color: TEXT, marginTop: 8 },
+  title: {
+    fontFamily: 'Anton_400Regular',
+    fontSize: 30,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: TEXT,
+    marginTop: 8,
+  },
   subtitle: { fontSize: 14, color: MUTED, lineHeight: 20, marginTop: 8, marginBottom: 18 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 22 },
   goalTile: {
     width: '47.5%',
     minHeight: 108,
-    borderRadius: 18,
+    borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: '#F0D9CC',
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
     gap: 10,
   },
-  goalTileOn: { backgroundColor: '#F6E4D8', borderColor: '#E8C8B4' },
-  goalLabel: { fontSize: 14, fontWeight: '700', color: TEXT, textAlign: 'center' },
-  goalLabelOn: { color: BRAND },
+  goalLabel: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
   fieldBlock: { marginBottom: 16 },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: '800',
-    color: MUTED,
+    fontWeight: '700',
     letterSpacing: 0.6,
     marginBottom: 8,
+    marginTop: 8,
+  },
+  nameInput: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 16,
   },
   select: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: LINE,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    backgroundColor: '#fff',
   },
-  selectValue: { flex: 1, fontSize: 15, color: TEXT, fontWeight: '600' },
-  selectPlaceholder: { color: '#A3A3A3', fontWeight: '500' },
+  selectValue: { flex: 1, fontSize: 15, fontWeight: '600' },
+  selectPlaceholder: { fontWeight: '500' },
   campusRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
   campusChip: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: LINE,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  campusChipOn: { backgroundColor: BRAND, borderColor: BRAND },
-  campusText: { fontSize: 13, fontWeight: '800', color: BRAND },
-  campusTextOn: { color: '#fff' },
+  campusText: { fontSize: 13, fontWeight: '800' },
   genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   genderChip: {
     width: '48%',
@@ -679,12 +762,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     borderWidth: 1.5,
-    borderColor: LINE,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 8,
   },
-  genderChipText: { fontSize: 12, fontWeight: '800', color: BRAND, textAlign: 'center', flexShrink: 1 },
+  genderChipText: { fontSize: 12, fontWeight: '800', textAlign: 'center', flexShrink: 1 },
   budgetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -699,46 +781,54 @@ const styles = StyleSheet.create({
   sliderTrack: {
     height: 8,
     borderRadius: 99,
-    backgroundColor: '#F0E4DC',
     justifyContent: 'center',
   },
-  sliderFill: { height: 8, borderRadius: 99, backgroundColor: BRAND },
+  sliderFill: { height: 8, borderRadius: 99 },
   sliderThumb: {
     position: 'absolute',
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: BRAND,
     top: -7,
     marginLeft: -11,
   },
   budgetEnds: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, marginBottom: 16 },
   budgetHint: { fontSize: 12, color: MUTED, fontWeight: '600' },
+  notice: { borderRadius: 12, padding: 12, marginTop: 8 },
+  noticeText: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
   continueBtn: {
     marginTop: 8,
-    backgroundColor: BRAND,
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: 999,
+    paddingVertical: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  continueText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  continueText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
     padding: 28,
   },
-  sheet: { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden' },
-  sheetRow: { paddingVertical: 16, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  sheetText: { fontSize: 16, color: TEXT, fontWeight: '600' },
+  sheet: { borderRadius: 6, overflow: 'hidden', borderWidth: 1 },
+  sheetRow: { paddingVertical: 16, paddingHorizontal: 18, borderBottomWidth: 1 },
+  sheetText: { fontSize: 16, fontWeight: '600' },
   courseSheet: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 6,
     overflow: 'hidden',
     maxHeight: '80%',
+    borderWidth: 1,
   },
   courseSearch: {
     margin: 12,
@@ -757,13 +847,11 @@ const styles = StyleSheet.create({
   photoChoice: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: '#F0D9CC',
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     gap: 8,
   },
-  photoChoiceOn: { backgroundColor: '#F6E4D8', borderColor: '#E8C8B4' },
   photoChoiceText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   photoPreview: {
     width: 88,

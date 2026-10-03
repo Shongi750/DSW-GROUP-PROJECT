@@ -14,10 +14,8 @@ export default function AppHeader({ onAvatarPress, onBellPress }) {
       </Pressable>
 
       <View style={styles.brand}>
-        <View style={styles.mark}>
-          <Ionicons name="fitness" size={14} color={colors.white} />
-        </View>
-        <Text style={[styles.brandText, { color: theme.text }]}>UFitness</Text>
+        <Text style={[styles.brandText, { color: theme.text }]}>U</Text>
+        <Text style={[styles.brandText, { color: colors.primary }]}>FITNESS</Text>
       </View>
 
       <Pressable onPress={onBellPress} hitSlop={8} style={styles.bellWrap}>
@@ -33,33 +31,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingHorizontal: 24,
+    paddingBottom: 10,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.prepBg,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   brand: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  mark: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.3,
+    fontFamily: 'Anton_400Regular',
+    fontSize: 22,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
   bellWrap: {
     width: 36,

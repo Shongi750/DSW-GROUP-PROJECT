@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, FlatList, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, FlatList, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import MentorCard from '../components/MentorCard';
 import { useTheme } from '../../../context/ThemeContext';
@@ -7,6 +8,8 @@ import { useApp } from '../../../context/AppContext';
 import { mentorMatchesStudent } from '../lib/matchMentors';
 import { listMentorRequests } from '../lib/mentorRequests';
 import { loadMentorRoster } from '../../admin/lib/adminStore';
+
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
 const mentors = [
     {
@@ -48,6 +51,7 @@ const campusFilters = ['All Campuses', 'APK', 'APB', 'DFC', 'SWC'];
 
 export default function MentorListScreen({navigation}) {
     const { colors, isDark } = useTheme();
+    const styles = createStyles(colors, isDark);
     const { profile, currentStudent } = useApp();
     const [selectedCampus, setSelectedCampus] = useState('All Campuses');
     const [requests, setRequests] = useState([]);
@@ -74,38 +78,41 @@ export default function MentorListScreen({navigation}) {
 
     const filteredMentors = useMemo(() => {
         return [...roster, ...mentors].filter((mentor) => {
+            if (mentor.appearAsMentor === false) return false;
             if (!mentorMatchesStudent(mentor, studentYear)) return false;
             if (selectedCampus !== 'All Campuses' && mentor.campus !== selectedCampus) return false;
             return true;
         });
     }, [selectedCampus, studentYear, roster]);
 
-    return(
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+    return (
+        <View style={styles.container}>
             <View style={styles.headerRow}>
-                <Text style={styles.appTitle}>UFitness</Text>
-                <TouchableOpacity style={[styles.notificationButton, { backgroundColor: isDark ? colors.overlay : '#fff1e8' }]}>
-                    <Text style={styles.notificationIcon}>🔔</Text>
+                <TouchableOpacity onPress={() => navigation.goBack?.()} hitSlop={10} style={styles.backBtn}>
+                    <Ionicons name="arrow-back" size={20} color={colors.brand} />
                 </TouchableOpacity>
+                <View style={styles.brandRow}>
+                    <Text style={[styles.brandU, { color: colors.text }]}>U</Text>
+                    <Text style={[styles.brandU, { color: colors.brand }]}>FITNESS</Text>
+                </View>
+                <View style={{ width: 40 }} />
             </View>
 
-            <Text style={[styles.slogan, { color: colors.text }]}>Connect & Grow</Text>
-            <Text style={[styles.subtitle, { color: colors.muted }]}>
-                Find a workout buddy to stay motivated or connect with a mentor to reach your fitness goals faster
-            </Text>
-            <Text style={[styles.yearHint, { color: colors.muted }]}>
+            <Text style={styles.kicker}>CONNECT</Text>
+            <Text style={styles.slogan}>Mentors</Text>
+            <Text style={styles.subtitle}>
                 {studentYear
-                    ? `Mentors are 3rd year+ and at or above your year (${studentYear}).`
-                    : 'Set your year of study in Profile so we can match you with senior mentors.'}
+                    ? `Seniors at or above your year (${studentYear}) on your campus.`
+                    : 'Set your year in Profile to match with senior mentors.'}
             </Text>
 
             {requests.length ? (
-                <Text style={[styles.yearHint, { color: colors.muted }]}>
-                    Pending mentor requests: {requests.map((row) => row.mentorName).join(', ')}
+                <Text style={styles.yearHint}>
+                    Pending: {requests.map((row) => row.mentorName).join(', ')}
                 </Text>
             ) : null}
 
-            <View style={styles.filterRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 {campusFilters.map((campus) => (
                     <TouchableOpacity
                         key={campus}
@@ -121,16 +128,17 @@ export default function MentorListScreen({navigation}) {
                                 selectedCampus === campus && styles.filterButtonTextActive,
                             ]}
                         >
-                            {campus}
+                            {campus === 'All Campuses' ? 'All' : campus}
                         </Text>
                     </TouchableOpacity>
                 ))}
-            </View>
+            </ScrollView>
 
             <FlatList
                 data={filteredMentors}
                 keyExtractor={(item) => item.id}
-                renderItem={({item}) => (
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => (
                     <MentorCard
                         mentor={item}
                         connectLabel={requestedIds.has(item.id) ? 'Requested' : 'Connect'}
@@ -140,7 +148,7 @@ export default function MentorListScreen({navigation}) {
                     />
                 )}
                 ListEmptyComponent={
-                    <Text style={[styles.empty, { color: colors.muted }]}>
+                    <Text style={styles.empty}>
                         {studentYear
                             ? 'No mentors at or above your year on this campus yet.'
                             : 'Add your year of study in setup to see senior mentors.'}
@@ -148,88 +156,96 @@ export default function MentorListScreen({navigation}) {
                 }
             />
         </View>
-    )
+    );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 10,
-        backgroundColor: '#f5f7f5',
-    },
-    headerRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-    },
-    appTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#f97316',
-    },
-    notificationButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#fff1e8',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    notificationIcon: {
-        fontSize: 18,
-        color: '#f97316',
-        textShadowColor: '#f97316',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 0,
-    },
-    slogan: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1f3c2d',
-        marginBottom: 4,
-    },
-    subtitle: {
-        fontSize: 13,
-        color: '#47615a',
-        marginBottom: 6,
-        lineHeight: 18,
-    },
-    yearHint: {
-        fontSize: 12,
-        marginBottom: 14,
-        lineHeight: 17,
-    },
-    empty: {
-        textAlign: 'center',
-        marginTop: 24,
-        fontSize: 14,
-        lineHeight: 20,
-    },
-    filterRow: {
-        flexDirection: 'row',
-        marginBottom: 12,
-        gap: 8,
-    },
-    filterButton: {
-        flex: 1,
-        backgroundColor: '#fff1e8',
-        borderRadius: 8,
-        paddingVertical: 10,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#f9c49c',
-    },
-    filterButtonActive: {
-        backgroundColor: '#f97316',
-        borderColor: '#f97316',
-    },
-    filterButtonText: {
-        color: '#a84d14',
-        fontWeight: '600',
-        fontSize: 12,
-    },
-    filterButtonTextActive: {
-        color: '#ffffff',
-    },
-});
+function createStyles(colors, isDark) {
+    return StyleSheet.create({
+        container: {
+            flex: 1,
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            backgroundColor: 'transparent',
+        },
+        headerRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12,
+        },
+        backBtn: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.card,
+        },
+        brandRow: { flexDirection: 'row', alignItems: 'center' },
+        brandU: {
+            ...display,
+            fontSize: 20,
+            textTransform: 'uppercase',
+        },
+        kicker: {
+            fontSize: 11,
+            fontWeight: '800',
+            letterSpacing: 1.4,
+            color: colors.brand,
+            marginBottom: 4,
+        },
+        slogan: {
+            ...display,
+            fontSize: 28,
+            color: colors.text,
+            marginBottom: 6,
+            textTransform: 'uppercase',
+        },
+        subtitle: {
+            fontSize: 14,
+            color: colors.muted,
+            marginBottom: 8,
+            lineHeight: 20,
+        },
+        yearHint: {
+            fontSize: 12,
+            color: colors.muted,
+            marginBottom: 12,
+            lineHeight: 17,
+        },
+        empty: {
+            textAlign: 'center',
+            color: colors.muted,
+            marginTop: 24,
+            fontSize: 14,
+            lineHeight: 20,
+        },
+        filterRow: {
+            flexDirection: 'row',
+            marginBottom: 12,
+            gap: 8,
+            paddingRight: 8,
+        },
+        filterButton: {
+            backgroundColor: colors.card,
+            borderRadius: 999,
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        filterButtonActive: {
+            backgroundColor: colors.brand,
+            borderColor: colors.brand,
+        },
+        filterButtonText: {
+            color: colors.text,
+            fontWeight: '700',
+            fontSize: 12,
+        },
+        filterButtonTextActive: {
+            color: '#ffffff',
+        },
+    });
+}

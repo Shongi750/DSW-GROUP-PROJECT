@@ -1,8 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius } from '../constants/theme';
-import { useTheme } from '../../../context/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors } from '../constants/theme';
+import { useTheme, radius } from '../../../context/ThemeContext';
+import { PHOTO_GLASS } from '../../../components/PhotoShell';
 import SafeImage from '../../../components/SafeImage';
 
 const TAG_STYLES = {
@@ -12,24 +14,45 @@ const TAG_STYLES = {
   prep: { backgroundColor: 'transparent', color: colors.muted },
 };
 
-export default function MealCard({ meal, onPress, onSwap, onCookOwn }) {
+export default function MealCard({ meal, onPress, onSwap, onCookOwn, eaten, onAte }) {
   const { colors: theme } = useTheme();
   return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+    <View
+      style={[
+        styles.card,
+        PHOTO_GLASS,
+        { opacity: eaten ? 0.72 : 1 },
+      ]}
+    >
       <Pressable onPress={() => onPress?.(meal)} style={({ pressed }) => pressed && styles.pressed}>
-        <SafeImage uri={meal.image} style={styles.image} resizeMode="cover" />
-        <View style={styles.body}>
-          <View style={styles.meta}>
+        <View style={styles.imageWrap}>
+          <SafeImage uri={meal.image} style={styles.image} resizeMode="cover" />
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={styles.imageFade}>
             <Text style={styles.slot}>{meal.slot}</Text>
             <View style={styles.kcalRow}>
-              <Ionicons name="flame" size={12} color={colors.primary} />
-              <Text style={styles.kcal}>{meal.kcal} kcal</Text>
+              {eaten ? (
+                <>
+                  <Ionicons name="checkmark-circle" size={14} color="#FF8A1A" />
+                  <Text style={styles.kcal}>Eaten</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="flame" size={12} color="#FF8A1A" />
+                  <Text style={styles.kcal}>{meal.kcal} kcal</Text>
+                </>
+              )}
             </View>
-          </View>
-          <Text style={[styles.title, { color: theme.text }]}>{meal.title}</Text>
-          <Text style={[styles.description, { color: theme.muted }]}>{meal.description}</Text>
+          </LinearGradient>
+        </View>
+        <View style={styles.body}>
+          <Text style={[styles.title, { color: '#FFFFFF' }]} numberOfLines={2}>
+            {meal.title}
+          </Text>
+          <Text style={[styles.description, { color: '#C9C9C9' }]} numberOfLines={2}>
+            {meal.description}
+          </Text>
           <View style={styles.tags}>
-            {meal.tags.map((tag) => {
+            {(meal.tags || []).slice(0, 3).map((tag) => {
               const tone = TAG_STYLES[tag.tone] || TAG_STYLES.prep;
               return (
                 <View
@@ -41,64 +64,70 @@ export default function MealCard({ meal, onPress, onSwap, onCookOwn }) {
               );
             })}
           </View>
-          <Text style={styles.hint}>
-            {meal.custom ? 'Tap to edit your plate' : 'Tap for ingredients, cook steps and portions'}
-          </Text>
         </View>
       </Pressable>
-      {onSwap || (onCookOwn && !meal.custom) ? (
-        <View style={styles.actions}>
-          {onSwap ? (
-            <Pressable onPress={() => onSwap(meal)} style={styles.ownBtn}>
-              <Text style={styles.ownText}>Swap meal</Text>
-            </Pressable>
-          ) : null}
-          {onCookOwn && !meal.custom ? (
-            <Pressable onPress={() => onCookOwn(meal)} style={styles.ownBtn}>
-              <Text style={styles.ownText}>I'll cook my own</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
+
+      <View style={styles.actions}>
+        {onAte && !eaten ? (
+          <Pressable onPress={() => onAte(meal)} style={[styles.primaryBtn, { backgroundColor: theme.accent }]}>
+            <Text style={styles.primaryText}>I ate this</Text>
+            <Ionicons name="restaurant" size={12} color="#FFFFFF" />
+          </Pressable>
+        ) : null}
+        {eaten ? (
+          <View style={[styles.eatenPill, { backgroundColor: 'rgba(255,106,0,0.16)' }]}>
+            <Ionicons name="checkmark" size={14} color={theme.accent} />
+            <Text style={[styles.eatenText, { color: theme.accent }]}>Logged</Text>
+          </View>
+        ) : null}
+        {onSwap && !eaten ? (
+          <Pressable onPress={() => onSwap(meal)} style={styles.iconBtn}>
+            <Ionicons name="shuffle" size={16} color={theme.accent} />
+          </Pressable>
+        ) : null}
+        {onCookOwn && !meal.custom && !eaten ? (
+          <Pressable onPress={() => onCookOwn(meal)} style={styles.iconBtn}>
+            <Ionicons name="create-outline" size={16} color={theme.muted} />
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.white,
     borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
     overflow: 'hidden',
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    marginBottom: 16,
+  },
+  imageWrap: {
+    height: 168,
+    backgroundColor: colors.prepBg,
   },
   image: {
     width: '100%',
-    height: 158,
-    backgroundColor: colors.prepBg,
+    height: '100%',
+  },
+  imageFade: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
   },
   body: {
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 14,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    paddingBottom: 6,
   },
   slot: {
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: colors.muted,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
   },
   kcalRow: {
     flexDirection: 'row',
@@ -107,25 +136,23 @@ const styles = StyleSheet.create({
   },
   kcal: {
     fontSize: 12,
-    color: colors.muted,
-    fontWeight: '500',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.3,
+    fontFamily: 'Anton_400Regular',
+    fontSize: 20,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   description: {
     marginTop: 4,
     fontSize: 13,
     lineHeight: 19,
-    color: colors.muted,
   },
   tags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
     gap: 8,
     marginTop: 10,
   },
@@ -138,30 +165,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  hint: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
   actions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
     paddingBottom: 14,
+    paddingTop: 4,
   },
-  ownBtn: {
-    alignSelf: 'flex-start',
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderRadius: 999,
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  ownText: {
+  primaryText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: colors.primaryDark,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  eatenPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  eatenText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pressed: {
     opacity: 0.92,

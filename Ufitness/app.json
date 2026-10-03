@@ -5,31 +5,67 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "ufitness",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "updates": {
       "enabled": false
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFE8D6"
+      "backgroundColor": "#0E0A08"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "za.ac.uj.ufitness",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Allow UFitness to unlock with Face ID.",
+        "NSPhotoLibraryUsageDescription": "Attach gym selfies and meal photos to campus posts.",
+        "NSCameraUsageDescription": "Take gym selfies and meal photos for campus posts."
+      }
     },
     "android": {
+      "package": "za.ac.uj.ufitness",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0E0A08"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-video"
+      "expo-dev-client",
+      "expo-video",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#FF6A00",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow UFitness to unlock with Face ID."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach gym selfies and meal photos to campus posts.",
+          "cameraPermission": "Take gym selfies and meal photos for campus posts."
+        }
+      ]
     ]
   }
 }

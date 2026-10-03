@@ -6,17 +6,18 @@
 
 import React from 'react';
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { useTheme } from '../../../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme, radius, display } from '../../../context/ThemeContext';
+import { PHOTO_GLASS } from '../../../components/PhotoShell';
 
-const BRAND = '#9A3E0B';
-const ACCENT = '#E8722C';
-const TEXT = '#1F2933';
-const MUTED = '#6B7280';
-
-// Alternating tint palette for the goal tags, matching the mockup's
-// peach / blue-grey / teal chips.
-const TAG_STYLES = [
+// Alternating tint palette for the goal tags — dark-mode friendly variants
+// of the mockup's peach / blue-grey / teal chips.
+const TAG_STYLES_DARK = [
+  { bg: 'rgba(255,106,0,0.18)', color: '#FF8A1A' },
+  { bg: 'rgba(148,180,214,0.16)', color: '#AFC6DE' },
+  { bg: 'rgba(20,184,166,0.16)', color: '#5EEAD4' },
+];
+const TAG_STYLES_LIGHT = [
   { bg: '#FBEADF', color: '#B4530F' },
   { bg: '#E8EDF2', color: '#3D5A80' },
   { bg: '#D8F1EC', color: '#0F766E' },
@@ -37,14 +38,16 @@ export default function BuddyCard({
   onMessage,
   disabled,
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
+  const tagStyles = isDark ? TAG_STYLES_DARK : TAG_STYLES_LIGHT;
   // Prefer an explicit goals array; fall back to the single fitnessGoal field.
   const goals = student.goals && student.goals.length ? student.goals : [student.fitnessGoal];
 
   const subtitleParts = [student.yearOfStudy, student.experienceLevel].filter(Boolean);
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
+    <View style={styles.card}>
       {/* Header: photo, identity, campus pill */}
       <View style={styles.header}>
         {student.avatarUrl ? (
@@ -56,10 +59,10 @@ export default function BuddyCard({
         )}
 
         <View style={styles.identity}>
-          <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+          <Text style={styles.name} numberOfLines={1}>
             {student.name}
           </Text>
-          <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitleParts.join(' • ')}</Text>
+          <Text style={styles.subtitle}>{subtitleParts.join(' • ')}</Text>
         </View>
 
         <View style={styles.campusPill}>
@@ -71,7 +74,7 @@ export default function BuddyCard({
       <Text style={styles.sectionLabel}>GOALS</Text>
       <View style={styles.tagRow}>
         {goals.map((goal, index) => {
-          const tint = TAG_STYLES[index % TAG_STYLES.length];
+          const tint = tagStyles[index % tagStyles.length];
           return (
             <View key={goal} style={[styles.tag, { backgroundColor: tint.bg }]}>
               <Text style={[styles.tagText, { color: tint.color }]}>{goal}</Text>
@@ -103,13 +106,15 @@ export default function BuddyCard({
           onPress={onAction}
           disabled={disabled}
         >
-          <Icon name="person-add-outline" size={18} color="#fff" />
-          <Text style={styles.connectText}>{actionLabel}</Text>
+          <Ionicons name="person-add-outline" size={18} color={disabled ? colors.muted : '#FFFFFF'} />
+          <Text style={[styles.connectText, disabled && styles.connectTextDisabled]}>
+            {actionLabel}
+          </Text>
         </Pressable>
 
         {onMessage && (
           <Pressable style={styles.messageButton} onPress={() => onMessage(student)}>
-            <Icon name="chatbox-outline" size={21} color="#3D5A80" />
+            <Ionicons name="chatbox-outline" size={21} color={colors.brand} />
           </Pressable>
         )}
       </View>
@@ -117,71 +122,78 @@ export default function BuddyCard({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    card: {
+      ...PHOTO_GLASS,
+      borderRadius: radius.card,
+      padding: 16,
+      marginBottom: 14,
+      shadowColor: '#000',
+      shadowOpacity: isDark ? 0 : 0.05,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: isDark ? 0 : 2,
+    },
 
-  header: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 60, height: 60, borderRadius: 30 },
-  avatarFallback: { backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 22 },
-  identity: { flex: 1, marginLeft: 13 },
-  name: { fontSize: 19, fontWeight: '700', color: TEXT },
-  subtitle: { fontSize: 14, color: MUTED, marginTop: 3 },
-  campusPill: {
-    backgroundColor: '#D8F1EC',
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  campusText: { color: '#0F766E', fontSize: 12.5, fontWeight: '700' },
+    header: { flexDirection: 'row', alignItems: 'center' },
+    avatar: { width: 60, height: 60, borderRadius: 30 },
+    avatarFallback: { backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+    avatarText: { color: '#FFFFFF', fontWeight: '700', fontSize: 22 },
+    identity: { flex: 1, marginLeft: 13 },
+    name: { ...display, fontSize: 18, color: '#FFFFFF', textTransform: 'none', letterSpacing: 0.3 },
+    subtitle: { fontSize: 14, color: '#C9C9C9', marginTop: 3 },
+    campusPill: {
+      backgroundColor: isDark ? 'rgba(255,106,0,0.16)' : 'rgba(255,106,0,0.10)',
+      paddingHorizontal: 11,
+      paddingVertical: 5,
+      borderRadius: radius.image,
+    },
+    campusText: { color: isDark ? '#FFB27A' : '#C2410C', fontSize: 12.5, fontWeight: '700' },
 
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: TEXT,
-    letterSpacing: 0.5,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },
-  tagText: { fontSize: 13.5, fontWeight: '600' },
+    sectionLabel: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: colors.muted,
+      letterSpacing: 1,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    tag: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.image },
+    tagText: { fontSize: 13.5, fontWeight: '600' },
 
-  bio: { fontSize: 14.5, fontStyle: 'italic', color: '#4B5563', lineHeight: 21, marginTop: 14 },
-  matchLine: { fontSize: 13, color: MUTED, marginTop: 14 },
+    bio: { fontSize: 14.5, fontStyle: 'italic', color: colors.muted, lineHeight: 21, marginTop: 14 },
+    matchLine: { fontSize: 13, color: colors.brand, marginTop: 14 },
 
-  divider: { height: 1, backgroundColor: '#EDF0F2', marginTop: 16 },
+    divider: { height: 1, backgroundColor: colors.border, marginTop: 16 },
 
-  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  connectButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: BRAND,
-    borderRadius: 10,
-    paddingVertical: 15,
-  },
-  connectButtonPressed: { opacity: 0.85 },
-  connectButtonDisabled: { backgroundColor: '#C9A08A' },
-  connectText: { color: '#fff', fontWeight: '700', fontSize: 15.5 },
-  messageButton: {
-    width: 58,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#3D5A80',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+    actionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    connectButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.brand,
+      borderRadius: radius.pill,
+      paddingVertical: 15,
+    },
+    connectButtonPressed: { opacity: 0.85 },
+    connectButtonDisabled: {
+      backgroundColor: isDark ? colors.overlay : '#F0E4DC',
+      borderWidth: isDark ? 1 : 0,
+      borderColor: colors.border,
+    },
+    connectText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15.5 },
+    connectTextDisabled: { color: isDark ? '#7A7A7A' : '#8A6A55' },
+    messageButton: {
+      width: 58,
+      borderRadius: radius.pill,
+      borderWidth: 1.5,
+      borderColor: colors.brand,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+}

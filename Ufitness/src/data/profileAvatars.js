@@ -1,25 +1,21 @@
-function avatarUri(seed, extras) {
-  const params = new URLSearchParams({
-    seed,
-    size: '256',
-    earringsProbability: '0',
-    featuresProbability: '0',
-    ...extras,
-  });
-  return `https://api.dicebear.com/9.x/adventurer/png?${params.toString()}`;
+/** Clean portrait defaults — no collage / UI mock seeds. */
+function portrait(id, extras = '') {
+  return `https://images.unsplash.com/${id}?w=400&h=400&fit=crop&auto=format&q=80${extras}`;
 }
 
-export const DEFAULT_AVATAR = avatarUri('Ufitness', {
-  hair: 'short10',
-  skinColor: '9e5622',
-  hairColor: '0e0e0e',
-});
+/** Solid brand fallback when no photo — orange initial via ui-avatars. */
+export function initialAvatar(name = 'U') {
+  const letter = encodeURIComponent(String(name || 'U').trim().charAt(0).toUpperCase() || 'U');
+  return `https://ui-avatars.com/api/?name=${letter}&background=FF6A00&color=ffffff&size=256&bold=true&format=png`;
+}
+
+export const DEFAULT_AVATAR = initialAvatar('U');
 
 export const PROFILE_AVATARS = [
-  { id: 'thabo', uri: avatarUri('Thabo', { hair: 'short16', skinColor: '9e5622', hairColor: '0e0e0e' }) },
-  { id: 'sipho', uri: avatarUri('Sipho', { hair: 'short08', skinColor: '763900', hairColor: '0e0e0e', features: 'mustache', featuresProbability: '100' }) },
-  { id: 'kai', uri: avatarUri('Kai', { hair: 'short04', skinColor: '9e5622', hairColor: '0e0e0e', glasses: 'variant01', glassesProbability: '100' }) },
-  { id: 'lerato', uri: avatarUri('Lerato', { hair: 'long08', skinColor: '9e5622', hairColor: '0e0e0e' }) },
-  { id: 'nomsa', uri: avatarUri('Nomsa', { hair: 'long20', skinColor: 'ecad80', hairColor: 'ac6511' }) },
-  { id: 'aya', uri: avatarUri('Aya', { hair: 'long12', skinColor: '763900', hairColor: '0e0e0e' }) },
+  { id: 'thabo', uri: portrait('photo-1568602471122-7832951cc4c5') },
+  { id: 'sipho', uri: portrait('photo-1506794778202-cad84cf45f1d') },
+  { id: 'kai', uri: portrait('photo-1507003211169-0a1dd7228f2d') },
+  { id: 'lerato', uri: portrait('photo-1531123897727-8f129e1688ce') },
+  { id: 'nomsa', uri: portrait('photo-1529626455594-4ff0802cfb7e') },
+  { id: 'aya', uri: portrait('photo-1589156280159-27698a70f29e') },
 ];

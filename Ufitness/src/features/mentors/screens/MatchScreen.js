@@ -5,9 +5,12 @@ import { useTheme } from '../../../context/ThemeContext';
 import { useApp } from '../../../context/AppContext';
 import { getMentorRequest, sendMentorRequest, withdrawMentorRequest } from '../lib/mentorRequests';
 
-export default function MatchScreen({ route }) {
-  const { colors } = useTheme();
-  const { currentStudent } = useApp();
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
+
+export default function MatchScreen({ route, navigation }) {
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
+  const { currentStudent, profile } = useApp();
   const mentor = route?.params?.mentor || {
     id: '0',
     name: 'Mentor',
@@ -44,8 +47,10 @@ export default function MatchScreen({ route }) {
       } else {
         const next = await sendMentorRequest({
           studentId,
-          studentName: currentStudent?.name,
+          studentName: currentStudent?.name || profile?.name,
           mentor,
+          studentCampus: profile?.campus || currentStudent?.campus || '',
+          studentGoal: profile?.fitnessGoal || currentStudent?.fitnessGoal || '',
         });
         setRequest(next);
         Alert.alert('Request sent', `${mentor.name} will see this as a pending mentor request.`);
@@ -58,22 +63,22 @@ export default function MatchScreen({ route }) {
   };
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
+    <View style={styles.card}>
       <View style={styles.header}>
         <Image
           source={{ uri: mentor.photo || 'https://via.placeholder.com/60' }}
           style={styles.avatar}
         />
         <View style={styles.info}>
-          <Text style={[styles.name, { color: colors.text }]}>{mentor.name}</Text>
-          <Text style={[styles.subText, { color: colors.muted }]}>{mentor.year} • {mentor.level}</Text>
+          <Text style={styles.name}>{mentor.name}</Text>
+          <Text style={styles.subText}>{mentor.year} • {mentor.level}</Text>
         </View>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{mentor.campus || 'APK'}</Text>
         </View>
       </View>
 
-      <Text style={[styles.quote, { color: colors.muted }]}>
+      <Text style={styles.quote}>
         {mentor.quote || 'Looking for someone to spot me on bench days and keep me accountable at 6 AM.'}
       </Text>
 
@@ -83,14 +88,17 @@ export default function MatchScreen({ route }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.chatBtn}
-          onPress={() =>
-            Alert.alert(
-              'Chat',
-              request
-                ? 'Chat unlocks after the mentor accepts. Your request is still pending.'
-                : 'Send a connect request first so this mentor can accept and chat.'
-            )
-          }
+          onPress={() => {
+            if (!request) {
+              Alert.alert('Connect first', 'Send a connect request, then you can open chat.');
+              return;
+            }
+            navigation.navigate('Chat', {
+              peerId: mentor.id,
+              peerName: mentor.name,
+              peerKind: 'mentor',
+            });
+          }}
         >
           <Text style={styles.chatText}>Chat</Text>
         </TouchableOpacity>
@@ -99,52 +107,56 @@ export default function MatchScreen({ route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  avatar: { width: 60, height: 60, borderRadius: 30 },
-  info: { flex: 1, marginLeft: 12 },
-  name: { fontSize: 18, fontWeight: 'bold', color: '#111' },
-  subText: { color: 'gray' },
-  badge: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  badgeText: { color: '#fff', fontWeight: 'bold' },
-  quote: { color: '#444', fontStyle: 'italic', marginBottom: 12 },
-  buttons: { flexDirection: 'row' },
-  connectBtn: {
-    flex: 1,
-    backgroundColor: '#f97316',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  withdrawBtn: {
-    backgroundColor: '#c2410c',
-  },
-  connectText: { color: '#fff', fontWeight: 'bold' },
-  chatBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  chatText: { color: '#333', fontWeight: 'bold' },
-});
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 16,
+      margin: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOpacity: isDark ? 0 : 0.1,
+      shadowRadius: 6,
+      elevation: isDark ? 0 : 3,
+    },
+    header: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: isDark ? colors.overlay : '#eee' },
+    info: { flex: 1, marginLeft: 12 },
+    name: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+    subText: { color: colors.muted },
+    badge: {
+      backgroundColor: isDark ? 'rgba(20,184,166,0.16)' : '#D8F1EC',
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    badgeText: { color: isDark ? '#5EEAD4' : '#0F766E', fontWeight: 'bold', fontSize: 12 },
+    quote: { color: colors.muted, fontStyle: 'italic', marginBottom: 12 },
+    buttons: { flexDirection: 'row' },
+    connectBtn: {
+      flex: 1,
+      backgroundColor: colors.brand,
+      paddingVertical: 11,
+      borderRadius: 999,
+      alignItems: 'center',
+      marginRight: 8,
+    },
+    withdrawBtn: {
+      backgroundColor: isDark ? colors.overlay : '#c2410c',
+      borderWidth: isDark ? 1 : 0,
+      borderColor: colors.border,
+    },
+    connectText: { color: '#fff', fontWeight: 'bold' },
+    chatBtn: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.brand,
+      paddingVertical: 11,
+      borderRadius: 999,
+      alignItems: 'center',
+    },
+    chatText: { color: colors.brand, fontWeight: 'bold' },
+  });
+}

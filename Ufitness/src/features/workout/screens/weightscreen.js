@@ -25,7 +25,7 @@ export default function WeightScreen({ navigation }) {
         <Text className="font-bold text-muted">Skip</Text>
       </TouchableOpacity>
 
-      <Text className="mt-2 text-center text-[22px] font-extrabold text-ink">Your weight</Text>
+      <Text className="mt-2 text-center text-[22px] font-display uppercase text-ink">Your weight</Text>
       <Text className="mb-7 mt-2 text-center text-muted">Stored on this device only. Not a medical measurement.</Text>
 
       <Text className="mb-2 font-bold text-ink">Weight</Text>
@@ -33,7 +33,7 @@ export default function WeightScreen({ navigation }) {
         <TouchableOpacity onPress={() => bump(-0.5)} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
           <Ionicons name="remove" size={18} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-[40px] font-extrabold text-ink">{weight.toFixed(1)}</Text>
+        <Text className="text-[40px] font-display uppercase text-ink">{weight.toFixed(1)}</Text>
         <Text className="font-bold text-muted">kg</Text>
         <TouchableOpacity onPress={() => bump(0.5)} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
           <Ionicons name="add" size={18} color="#FFFFFF" />

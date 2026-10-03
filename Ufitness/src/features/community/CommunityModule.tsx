@@ -1,391 +1,63 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
-  StyleSheet,
   Image,
   ScrollView,
   Alert,
   Modal,
+  Share,
 } from 'react-native';
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-} from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useTheme } from '../../context/ThemeContext';
 import SafeImage from '../../components/SafeImage';
 import CookVideo from '../meals/components/CookVideo';
 import { getRecipe } from '../meals/data/recipes';
 import { SA_MEALS } from '../meals/data/saFoods';
 import { loadCommunityState, saveCommunityState } from './persist';
 import { getGroupPage, mergeGroupMembership } from './groupPages';
+import { joinGroupLive, leaveGroupLive, loadGroupMembers, loadGroupMessages, sendGroupMessage, subscribeGroupChat } from './groupLive';
+import { useApp } from '../../context/AppContext';
 import WorkoutClipCard from './WorkoutClipCard';
-
-function useCommunityStyles() {
-  const { colors, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
-  return { styles, colors, isDark };
-}
-
-const UJ_CAMPUSES = [
-  'APK (Auckland Park Kingsway)',
-  'APB (Auckland Park Bunting Road)',
-  'DFC (Doornfontein)',
-  'SWC (Soweto)',
-];
-
-type Profile = {
-  name: string;
-  avatarUri: string | null;
-  residenceCampus: string;
-  studyCampus: string;
-};
-
-type Comment = {
-  id: string;
-  author: string;
-  avatarUri?: string | null;
-  text: string;
-};
-
-type WorkoutStats = {
-  title: string;
-  durationMinutes: string;
-  totalWeightKg?: string;
-  distanceKm?: string;
-};
-
-type GymGoal = 'Pre-workout' | 'Post-workout' | 'High-protein' | 'Cut' | 'Bulk';
-
-type GymRecipe = {
-  title: string;
-  goal: GymGoal;
-  ingredients: string[];
-  steps: string[];
-  youtubeId?: string;
-  youtubeTitle?: string;
-};
-
-type WorkoutClip = {
-  title: string;
-  videoUri: string;
-  musicTitle: string;
-  musicArtist?: string;
-};
-
-type Post = {
-  id: string;
-  author: string;
-  avatarUri?: string | null;
-  text: string;
-  imageUri?: any;
-  likes: number;
-  comments: Comment[];
-  isCheckIn?: boolean;
-  busynessStatus?: 'Quiet' | 'Moderate' | 'Packed';
-  campus?: string;
-  workoutStats?: WorkoutStats;
-  recipe?: GymRecipe;
-  workoutClip?: WorkoutClip;
-};
-
-const GYM_GOALS: GymGoal[] = ['Pre-workout', 'Post-workout', 'High-protein', 'Cut', 'Bulk'];
-
-const GYM_PLANNER_MEALS = [
-  { id: 'pap-eggs', goal: 'Post-workout' as GymGoal },
-  { id: 'eggs-toast', goal: 'Pre-workout' as GymGoal },
-  { id: 'tuna-sandwich', goal: 'High-protein' as GymGoal },
-  { id: 'chicken-rice', goal: 'Bulk' as GymGoal },
-  { id: 'chicken-sandwich', goal: 'Post-workout' as GymGoal },
-  { id: 'pasta-soya', goal: 'High-protein' as GymGoal },
-];
-
-function parseYouTubeId(input: string): string | null {
-  const raw = (input || '').trim();
-  if (!raw) return null;
-  const match =
-    raw.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/) ||
-    raw.match(/^([A-Za-z0-9_-]{11})$/);
-  return match ? match[1] : null;
-}
-
-type Group = {
-  id: string;
-  name: string;
-  link: string;
-  campus?: string;
-  imageUri?: any;
-  status: 'none' | 'joined';
-  about?: string;
-  nextSession?: string;
-};
-
-type CampusProgress = {
-  campusCode: string;
-  completedCount: number;
-};
-
-type Challenge = {
-  id: string;
-  name: string;
-  description: string;
-  imageUri?: any;
-  joined: boolean;
-  campusScores: CampusProgress[];
-};
-
-type GymBusyness = {
-  campus: string;
-  status: 'Quiet' | 'Moderate' | 'Packed';
-  lastUpdated: string;
-  reportedBy: string;
-  note?: string;
-};
-
-type ChallengeDay = { day: number; label: string; isRest: boolean };
-
-const PUSHUP_PLAN: ChallengeDay[] = [
-  { day: 1, label: '3 x 12', isRest: false },
-  { day: 2, label: '3 x 14', isRest: false },
-  { day: 3, label: 'Rest', isRest: true },
-  { day: 4, label: '4 x 12', isRest: false },
-  { day: 5, label: '4 x 14', isRest: false },
-  { day: 6, label: 'Rest', isRest: true },
-  { day: 7, label: '4 x 15', isRest: false },
-  { day: 8, label: '3 x 18', isRest: false },
-  { day: 9, label: 'Rest', isRest: true },
-  { day: 10, label: 'Max effort test', isRest: false },
-  { day: 11, label: '4 x 16', isRest: false },
-  { day: 12, label: '4 x 18', isRest: false },
-  { day: 13, label: 'Rest', isRest: true },
-  { day: 14, label: '5 x 15', isRest: false },
-  { day: 15, label: '5 x 16', isRest: false },
-  { day: 16, label: 'Rest', isRest: true },
-  { day: 17, label: '4 x 20', isRest: false },
-  { day: 18, label: '3 x 25', isRest: false },
-  { day: 19, label: 'Rest', isRest: true },
-  { day: 20, label: 'Max effort test', isRest: false },
-  { day: 21, label: '5 x 18', isRest: false },
-  { day: 22, label: '5 x 20', isRest: false },
-  { day: 23, label: 'Rest', isRest: true },
-  { day: 24, label: '4 x 25', isRest: false },
-  { day: 25, label: '4 x 27', isRest: false },
-  { day: 26, label: 'Rest', isRest: true },
-  { day: 27, label: '3 x 30', isRest: false },
-  { day: 28, label: '5 x 22', isRest: false },
-  { day: 29, label: 'Rest', isRest: true },
-  { day: 30, label: 'Final max effort test', isRest: false },
-];
-
-const INITIAL_GROUPS: Group[] = [
-  {
-    id: 'g1',
-    name: 'APK Morning Runners',
-    campus: 'APK (Auckland Park Kingsway)',
-    link: 'myapp://group/g1',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=800&q=80' },
-    status: 'none',
-    about: 'Easy 5 km loops before lectures. New runners welcome — no pace gate.',
-    nextSession: 'Tue 06:15 · APK Kingsway loop',
-  },
-  {
-    id: 'g2',
-    name: 'APB Weightlifting Crew',
-    campus: 'APB (Auckland Park Bunting Road)',
-    link: 'myapp://group/g2',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80' },
-    status: 'none',
-    about: 'Compound lifts, form checks, and a shared squat rack booking at APB.',
-    nextSession: 'Wed 17:30 · APB gym floor',
-  },
-  {
-    id: 'g3',
-    name: 'DFC Yoga & Stretch',
-    campus: 'DFC (Doornfontein)',
-    link: 'myapp://group/g3',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=800&q=80' },
-    status: 'none',
-    about: 'Mobility and recovery after labs. Mats on the DFC courtyard when the studio is full.',
-    nextSession: 'Thu 16:00 · DFC courtyard',
-  },
-  {
-    id: 'g4',
-    name: 'SWC Soccer Club',
-    campus: 'SWC (Soweto)',
-    link: 'myapp://group/g4',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=800&q=80' },
-    status: 'none',
-    about: 'Five-a-side and weekend matches. Boots optional, shin guards if you have them.',
-    nextSession: 'Sat 09:00 · SWC field',
-  },
-];
-
-const INITIAL_CHALLENGES: Challenge[] = [
-  {
-    id: 'c1',
-    name: '30-Day Push-Up Challenge',
-    description: 'Build upper body endurance with daily set progressions.',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1598971639058-fab3c3109a00?auto=format&fit=crop&w=800&q=80' },
-    joined: false,
-    campusScores: [
-      { campusCode: 'APK', completedCount: 42 },
-      { campusCode: 'APB', completedCount: 28 },
-      { campusCode: 'DFC', completedCount: 19 },
-      { campusCode: 'SWC', completedCount: 31 },
-    ],
-  },
-  {
-    id: 'c2',
-    name: 'Step Count Sprint',
-    description: 'Hit 10,000 steps daily across campus grounds.',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1552674605-db6ffd4facb5?auto=format&fit=crop&w=800&q=80' },
-    joined: false,
-    campusScores: [
-      { campusCode: 'APK', completedCount: 88 },
-      { campusCode: 'APB', completedCount: 64 },
-      { campusCode: 'DFC', completedCount: 45 },
-      { campusCode: 'SWC', completedCount: 52 },
-    ],
-  },
-  {
-    id: 'c3',
-    name: '500-Squat Leg Blitz',
-    description: 'Accumulate 500 squats over 7 days for lower-body power.',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&w=800&q=80' },
-    joined: false,
-    campusScores: [
-      { campusCode: 'APK', completedCount: 35 },
-      { campusCode: 'APB', completedCount: 41 },
-      { campusCode: 'DFC', completedCount: 22 },
-      { campusCode: 'SWC', completedCount: 18 },
-    ],
-  },
-  {
-    id: 'c4',
-    name: '5K Campus Dash',
-    description: 'Run or walk a total 5km timed attempt around campus.',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&q=80' },
-    joined: false,
-    campusScores: [
-      { campusCode: 'APK', completedCount: 60 },
-      { campusCode: 'APB', completedCount: 39 },
-      { campusCode: 'DFC', completedCount: 51 },
-      { campusCode: 'SWC', completedCount: 44 },
-    ],
-  },
-  {
-    id: 'c5',
-    name: '100-Minute Plank Hold',
-    description: 'Log cumulative plank holds until reaching 100 total minutes.',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=800&q=80' },
-    joined: false,
-    campusScores: [
-      { campusCode: 'APK', completedCount: 24 },
-      { campusCode: 'APB', completedCount: 19 },
-      { campusCode: 'DFC', completedCount: 15 },
-      { campusCode: 'SWC', completedCount: 29 },
-    ],
-  },
-];
-
-const INITIAL_GYM_STATUSES: Record<string, GymBusyness> = {
-  APK: { campus: 'APK', status: 'Moderate', lastUpdated: '10 mins ago', reportedBy: 'Thabo M.', note: 'Benches free, cardio packed' },
-  APB: { campus: 'APB', status: 'Quiet', lastUpdated: '25 mins ago', reportedBy: 'Lerato K.', note: 'Plenty of free weights' },
-  DFC: { campus: 'DFC', status: 'Packed', lastUpdated: '5 mins ago', reportedBy: 'Sipho N.', note: 'Full queue for squat rack' },
-  SWC: { campus: 'SWC', status: 'Quiet', lastUpdated: '1 hour ago', reportedBy: 'System', note: 'Normal traffic' },
-};
-
-const INITIAL_POSTS: Post[] = [
-  {
-    id: 'clip1',
-    author: 'Thabo M.',
-    text: 'Last three benches at APK. This track carried the set.',
-    likes: 14,
-    comments: [{ id: 'clipc1', author: 'Kagiso M.', text: 'Saving this song for Thursday legs.' }],
-    workoutClip: {
-      title: 'APK bench clip',
-      videoUri: 'https://videos.pexels.com/video-files/5319066/5319066-sd_540_960_25fps.mp4',
-      musicTitle: 'Power',
-      musicArtist: 'Kanye West',
-    },
-  },
-  {
-    id: 'r1',
-    author: 'Lerato K.',
-    text: 'Post-gym plate on a student budget. Eggs for protein, pap to refill glycogen.',
-    likes: 11,
-    comments: [{ id: 'rc1', author: 'Thabo M.', text: 'This is what I eat after APK gym too.' }],
-    recipe: {
-      title: 'Pap & scrambled eggs',
-      goal: 'Post-workout',
-      ingredients: ['1 cup maize meal', '2 eggs', 'pinch of salt'],
-      steps: [
-        'Cook stiff pap in a small pot.',
-        'Scramble two eggs in a pan.',
-        'Plate pap with eggs on the side. Eat within an hour of training.',
-      ],
-      youtubeId: '0B8Yy45DLi4',
-      youtubeTitle: 'Fully-Loaded Pap Cups 3-Ways',
-    },
-  },
-  {
-    id: 'w1',
-    author: 'Kagiso M.',
-    text: 'Smashed a new PR on bench press today at APK Gym!',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=800&q=80' },
-    likes: 8,
-    comments: [{ id: 'c1', author: 'Sipho N.', text: 'Light weight baby!' }],
-    workoutStats: {
-      title: 'Upper Body Power',
-      durationMinutes: '65',
-      totalWeightKg: '3,450',
-    },
-  },
-  {
-    id: '1',
-    author: 'Thabo M.',
-    text: 'Anyone up for a 6am run tomorrow?',
-    imageUri: { uri: 'https://images.unsplash.com/photo-1513593771513-7b58b6c4af38?auto=format&fit=crop&w=800&q=80' },
-    likes: 2,
-    comments: [
-      { id: 'cm1', author: 'Sipho N.', text: 'Count me in! Meet at APK gym?' },
-    ],
-  },
-  {
-    id: 'r2',
-    author: 'Sipho N.',
-    text: 'Sunday batch-cook for bulk week. IQF chicken and rice lasts three gym days.',
-    likes: 6,
-    comments: [],
-    recipe: {
-      title: 'Chicken & rice stew',
-      goal: 'Bulk',
-      ingredients: ['IQF chicken pieces', '1 cup rice', 'tomato sauce', 'onion'],
-      steps: [
-        'Brown the chicken with onion.',
-        'Add tomato sauce and simmer until cooked through.',
-        'Serve on a cup of rice. Pack leftovers for campus.',
-      ],
-      youtubeId: 'pe_KDAKKdNE',
-      youtubeTitle: '5-Ingredient One-Pot Chicken Rice',
-    },
-  },
-];
+import { useCommunityStyles } from './styles';
+import InspoBackground from '../../components/InspoBackground';
+import {
+  UJ_CAMPUSES,
+  GYM_GOALS,
+  GYM_PLANNER_MEALS,
+  PUSHUP_PLAN,
+  INITIAL_GROUPS,
+  INITIAL_CHALLENGES,
+  INITIAL_GYM_STATUSES,
+  INITIAL_POSTS,
+  parseYouTubeId,
+} from './model';
+import type {
+  Profile,
+  Comment,
+  GymGoal,
+  GymRecipe,
+  Post,
+  Group,
+  Challenge,
+  GymBusyness,
+} from './model';
 
 export default function CommunityModule({
   profileFromApp,
   onOpenBuddies,
   onOpenMentors,
+  onOpenMentorHub,
 }: {
   profileFromApp?: Profile | null;
   onOpenBuddies?: () => void;
   onOpenMentors?: () => void;
+  onOpenMentorHub?: () => void;
 }) {
   return (
     <SafeAreaProvider>
@@ -393,6 +65,7 @@ export default function CommunityModule({
         profileFromApp={profileFromApp}
         onOpenBuddies={onOpenBuddies}
         onOpenMentors={onOpenMentors}
+        onOpenMentorHub={onOpenMentorHub}
       />
     </SafeAreaProvider>
   );
@@ -402,12 +75,20 @@ function AppContent({
   profileFromApp,
   onOpenBuddies,
   onOpenMentors,
+  onOpenMentorHub,
 }: {
   profileFromApp?: Profile | null;
   onOpenBuddies?: () => void;
   onOpenMentors?: () => void;
+  onOpenMentorHub?: () => void;
 }) {
   const { styles, colors } = useCommunityStyles();
+  const { user, profile: appProfile } = useApp();
+  const actor = {
+    uid: user?.id || appProfile?.userId || '',
+    name: appProfile?.name || profileFromApp?.name || 'Student',
+    campus: appProfile?.campus || '',
+  };
   const [screen, setScreen] = useState<
     'home' | 'profileCreation' | 'community' | 'groups' | 'groupDetail' | 'challenges' | 'challengeDetail'
   >(profileFromApp ? 'community' : 'profileCreation');
@@ -456,7 +137,9 @@ function AppContent({
   };
 
   const joinGroup = (id: string) => {
-    setGroups((current) => current.map((group) => (group.id === id ? { ...group, status: 'joined' } : group)));
+    const group = groups.find((item) => item.id === id);
+    setGroups((current) => current.map((item) => (item.id === id ? { ...item, status: 'joined' } : item)));
+    joinGroupLive(id, actor, group || { id, name: id });
     openGroup(id);
   };
 
@@ -474,65 +157,71 @@ function AppContent({
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
-      {screen === 'home' ? (
-        <HomeScreen onOpenCommunity={handleStartCommunity} />
-      ) : screen === 'profileCreation' ? (
-        <ProfileCreationScreen
-          onSubmit={handleProfileSubmit}
-          onBack={() => setScreen(profileFromApp ? 'community' : 'home')}
-        />
-      ) : screen === 'community' ? (
-        <CampusCommunityScreen
-          profile={profile}
-          onBack={profileFromApp ? undefined : () => setScreen('home')}
-          onOpenGroups={() => setScreen('groups')}
-          onOpenChallenges={() => setScreen('challenges')}
-          onOpenBuddies={onOpenBuddies}
-          onOpenMentors={onOpenMentors}
-        />
-      ) : screen === 'groups' ? (
-        <GroupsScreen
-          groups={groups}
-          setGroups={setGroups}
-          onBack={() => setScreen('community')}
-          onOpenGroup={openGroup}
-          onJoinGroup={joinGroup}
-        />
-      ) : screen === 'groupDetail' ? (
-        <GroupDetailScreen
-          group={groups.find((item) => item.id === selectedGroupId) || groups[0]}
-          onBack={() => setScreen('groups')}
-          onJoin={() => joinGroup(selectedGroupId)}
-          onLeave={() => {
-            setGroups((current) =>
-              current.map((group) => (group.id === selectedGroupId ? { ...group, status: 'none' } : group))
-            );
-            setScreen('groups');
-          }}
-        />
-      ) : screen === 'challenges' ? (
-        <ChallengesScreen
-          challenges={challenges}
-          setChallenges={setChallenges}
-          onBack={() => setScreen('community')}
-          onOpenChallengeDetail={(id) => {
-            setSelectedChallengeId(id);
-            setScreen('challengeDetail');
-          }}
-        />
-      ) : (
-        <ChallengeDetailScreen
-          challenge={challenges.find((c) => c.id === selectedChallengeId) || challenges[0]}
-          onBack={() => setScreen('challenges')}
-        />
-      )}
-    </SafeAreaView>
+    <View style={{ flex: 1 }}>
+      <InspoBackground plate="community" />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        {screen === 'home' ? (
+          <HomeScreen onOpenCommunity={handleStartCommunity} />
+        ) : screen === 'profileCreation' ? (
+          <ProfileCreationScreen
+            onSubmit={handleProfileSubmit}
+            onBack={() => setScreen(profileFromApp ? 'community' : 'home')}
+          />
+        ) : screen === 'community' ? (
+          <CampusCommunityScreen
+            profile={profile}
+            onBack={profileFromApp ? undefined : () => setScreen('home')}
+            onOpenGroups={() => setScreen('groups')}
+            onOpenChallenges={() => setScreen('challenges')}
+            onOpenBuddies={onOpenBuddies}
+            onOpenMentors={onOpenMentors}
+            onOpenMentorHub={onOpenMentorHub}
+          />
+        ) : screen === 'groups' ? (
+          <GroupsScreen
+            groups={groups}
+            setGroups={setGroups}
+            actor={actor}
+            onBack={() => setScreen('community')}
+            onOpenGroup={openGroup}
+            onJoinGroup={joinGroup}
+          />
+        ) : screen === 'groupDetail' ? (
+          <GroupDetailScreen
+            group={groups.find((item) => item.id === selectedGroupId) || groups[0]}
+            onBack={() => setScreen('groups')}
+            onJoin={() => joinGroup(selectedGroupId)}
+            onLeave={() => {
+              leaveGroupLive(selectedGroupId, actor.uid);
+              setGroups((current) =>
+                current.map((group) => (group.id === selectedGroupId ? { ...group, status: 'none' } : group))
+              );
+              setScreen('groups');
+            }}
+          />
+        ) : screen === 'challenges' ? (
+          <ChallengesScreen
+            challenges={challenges}
+            setChallenges={setChallenges}
+            onBack={() => setScreen('community')}
+            onOpenChallengeDetail={(id) => {
+              setSelectedChallengeId(id);
+              setScreen('challengeDetail');
+            }}
+          />
+        ) : (
+          <ChallengeDetailScreen
+            challenge={challenges.find((c) => c.id === selectedChallengeId) || challenges[0]}
+            onBack={() => setScreen('challenges')}
+          />
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 
 function HomeScreen({ onOpenCommunity }: { onOpenCommunity: () => void }) {
-  const { styles } = useCommunityStyles();
+  const { styles, colors } = useCommunityStyles();
   return (
     <View style={styles.homeContainer}>
       <Text style={styles.heading}>Welcome</Text>
@@ -592,7 +281,7 @@ function ProfileCreationScreen({
   return (
     <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
       <TouchableOpacity onPress={onBack} style={styles.backRow}>
-        <Ionicons name="arrow-back" size={20} color="#C85A17" />
+        <Ionicons name="arrow-back" size={20} color={colors.brand} />
         <Text style={styles.backText}>Back</Text>
       </TouchableOpacity>
 
@@ -605,7 +294,7 @@ function ProfileCreationScreen({
             <Image source={typeof avatarUri === 'string' ? { uri: avatarUri } : avatarUri} style={styles.avatarImage} />
           ) : (
             <View style={styles.iconPlaceholderWrap}>
-              <Ionicons name="camera-outline" size={28} color="#4b5563" />
+              <Ionicons name="camera-outline" size={28} color={colors.muted} />
               <Text style={styles.avatarPlaceholderText}>Add Photo</Text>
             </View>
           )}
@@ -664,6 +353,16 @@ function ProfileCreationScreen({
   );
 }
 
+function postTags(item: Post) {
+  if (item.tags?.length) return item.tags.slice(0, 2);
+  const tags: string[] = [];
+  if (item.recipe) tags.push(item.recipe.goal);
+  if (item.workoutStats) tags.push('Workout');
+  if (item.isCheckIn && item.campus) tags.push(item.campus);
+  if (item.workoutClip) tags.push('Clip');
+  return tags.slice(0, 2);
+}
+
 function CampusCommunityScreen({
   profile,
   onBack,
@@ -671,6 +370,7 @@ function CampusCommunityScreen({
   onOpenChallenges,
   onOpenBuddies,
   onOpenMentors,
+  onOpenMentorHub,
 }: {
   profile: Profile | null;
   onBack?: () => void;
@@ -678,6 +378,7 @@ function CampusCommunityScreen({
   onOpenChallenges: () => void;
   onOpenBuddies?: () => void;
   onOpenMentors?: () => void;
+  onOpenMentorHub?: () => void;
 }) {
   const { styles, colors } = useCommunityStyles();
   const [gymStatuses, setGymStatuses] = useState<Record<string, GymBusyness>>(INITIAL_GYM_STATUSES);
@@ -691,6 +392,9 @@ function CampusCommunityScreen({
   const [showOtherCampuses, setShowOtherCampuses] = useState(false);
   const [selectedCampusForMeter, setSelectedCampusForMeter] = useState(myCampuses[0] || 'APK');
   const [busynessNote, setBusynessNote] = useState('');
+  const [showGymStatus, setShowGymStatus] = useState(false);
+  const [showMoreCompose, setShowMoreCompose] = useState(false);
+  const [hubSegment, setHubSegment] = useState<'feed' | 'groups' | 'challenges' | 'connect'>('feed');
 
   const [isWorkoutModalOpen, setIsWorkoutModalOpen] = useState(false);
   const [workoutTitle, setWorkoutTitle] = useState('');
@@ -718,6 +422,7 @@ function CampusCommunityScreen({
   const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
   const [newPost, setNewPost] = useState('');
   const [newPostImage, setNewPostImage] = useState<string | null>(null);
+  const [feedQuery, setFeedQuery] = useState('');
 
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -1051,217 +756,293 @@ function CampusCommunityScreen({
     setCommentText('');
   };
 
+  const visiblePosts = posts.filter((item) => {
+    const query = feedQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${item.author} ${item.text} ${(item.tags || []).join(' ')}`.toLowerCase().includes(query);
+  });
+
+  const busynessPanel = (
+    <View style={styles.meterContainer}>
+      <View style={styles.meterTitleRow}>
+        <Ionicons name="flame" size={20} color={colors.brand} style={{ marginRight: 6 }} />
+        <Text style={styles.meterTitle}>Campus gym status</Text>
+      </View>
+
+      <View style={styles.meterCampusRow}>
+        {displayedCampuses.map((code) => {
+          const info = gymStatuses[code];
+          // Orange intensity only — Quiet soft, Moderate brand, Packed deep.
+          const statusColor =
+            info?.status === 'Quiet'
+              ? '#FFB27A'
+              : info?.status === 'Moderate'
+                ? colors.brand
+                : info?.status === 'Packed'
+                  ? '#C2410C'
+                  : colors.muted;
+
+          return (
+            <TouchableOpacity
+              key={`meter-${code}`}
+              style={[styles.meterCard, selectedCampusForMeter === code && styles.meterCardSelected]}
+              onPress={() => setSelectedCampusForMeter(code)}
+            >
+              <Text style={styles.meterCampusText}>{code}</Text>
+              <Text style={[styles.meterBadgeText, { color: statusColor }]}>{info?.status || 'Unknown'}</Text>
+              <Text style={styles.meterTimeText}>{info?.lastUpdated}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <TouchableOpacity style={styles.toggleCampusesBtn} onPress={() => setShowOtherCampuses(!showOtherCampuses)}>
+        <Text style={styles.toggleCampusesText}>
+          {showOtherCampuses ? 'Hide other campuses' : 'See other campuses'}
+        </Text>
+      </TouchableOpacity>
+
+      {gymStatuses[selectedCampusForMeter]?.note ? (
+        <View style={styles.noteRow}>
+          <Ionicons
+            name="chatbubble-ellipses-outline"
+            size={14}
+            color={colors.text}
+            style={{ marginRight: 4 }}
+          />
+          <Text style={styles.meterNote}>
+            "{gymStatuses[selectedCampusForMeter].note}" —{' '}
+            <Text style={{ fontWeight: 'bold' }}>{gymStatuses[selectedCampusForMeter].reportedBy}</Text>
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.checkInBox}>
+        <Text style={styles.checkInLabel}>At {selectedCampusForMeter} gym? Update how full it is.</Text>
+        <TextInput
+          style={[styles.input, { marginRight: 0, marginBottom: 8 }]}
+          placeholder="Optional note (e.g. squat rack taken)..."
+          placeholderTextColor={colors.muted}
+          value={busynessNote}
+          onChangeText={setBusynessNote}
+        />
+        <View style={styles.busynessBtnRow}>
+          <TouchableOpacity style={[styles.statusBtn, styles.btnQuiet]} onPress={() => handleUpdateBusyness('Quiet')}>
+            <Ionicons name="radio-button-on" size={12} color="#FFB27A" style={{ marginRight: 4 }} />
+            <Text style={styles.statusBtnText}>Quiet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statusBtn, styles.btnModerate]}
+            onPress={() => handleUpdateBusyness('Moderate')}
+          >
+            <Ionicons name="radio-button-on" size={12} color="#FF6A00" style={{ marginRight: 4 }} />
+            <Text style={styles.statusBtnText}>Moderate</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.statusBtn, styles.btnPacked]} onPress={() => handleUpdateBusyness('Packed')}>
+            <Ionicons name="radio-button-on" size={12} color="#C2410C" style={{ marginRight: 4 }} />
+            <Text style={styles.statusBtnText}>Packed</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <>
       <FlatList
-        style={[styles.list, { backgroundColor: colors.background }]}
+        style={styles.list}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={true}
         ListHeaderComponent={
           <>
             {onBack ? (
               <TouchableOpacity onPress={onBack} style={styles.backRow}>
-                <Ionicons name="arrow-back" size={20} color="#C85A17" />
+                <Ionicons name="arrow-back" size={20} color={colors.brand} />
                 <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
             ) : null}
 
-            <Text style={styles.heading}>UJ Community Board</Text>
+            <Text style={styles.heading}>Campus</Text>
+            <Text style={[styles.subHeading, { marginBottom: 14 }]}>
+              {profile?.name ? `${profile.name.split(' ')[0]}, today at ${resCode}.` : 'Today at UJ.'}
+            </Text>
 
-            {profile && (
-              <View style={styles.profileBadgeBanner}>
-                {profile.avatarUri && (
-                  <Image source={typeof profile.avatarUri === 'string' ? { uri: profile.avatarUri } : profile.avatarUri} style={styles.bannerAvatar} />
-                )}
-                <View>
-                  <Text style={styles.bannerWelcome}>Logged in as: {profile.name}</Text>
-                  <Text style={styles.bannerCampusSub}>
-                    Residence: {resCode} | Study: {studyCode}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.navButtonsRow}>
-              <TouchableOpacity style={styles.navButton} onPress={onOpenGroups}>
-                <Ionicons name="people-outline" size={18} color="#9A3412" style={{ marginRight: 6 }} />
-                <Text style={styles.navButtonText}>Groups</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={onOpenChallenges}>
-                <Ionicons name="trophy-outline" size={18} color="#9A3412" style={{ marginRight: 6 }} />
-                <Text style={styles.navButtonText}>Challenges</Text>
-              </TouchableOpacity>
-              {onOpenBuddies ? (
-                <TouchableOpacity style={styles.navButton} onPress={onOpenBuddies}>
-                  <Ionicons name="people-circle-outline" size={18} color="#9A3412" style={{ marginRight: 6 }} />
-                  <Text style={styles.navButtonText}>Buddies</Text>
-                </TouchableOpacity>
-              ) : null}
-              {onOpenMentors ? (
-                <TouchableOpacity style={styles.navButton} onPress={onOpenMentors}>
-                  <Ionicons name="school-outline" size={18} color="#9A3412" style={{ marginRight: 6 }} />
-                  <Text style={styles.navButtonText}>Mentors</Text>
-                </TouchableOpacity>
-              ) : null}
+            <View style={styles.segmentBar}>
+              {(
+                [
+                  { id: 'feed' as const, label: 'Feed' },
+                  { id: 'groups' as const, label: 'Groups' },
+                  { id: 'challenges' as const, label: 'Challenges' },
+                  { id: 'connect' as const, label: 'Connect' },
+                ] as const
+              ).map((item) => {
+                const on = hubSegment === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.segmentBtn, on && styles.segmentBtnOn]}
+                    onPress={() => {
+                      setHubSegment(item.id);
+                      if (item.id === 'groups') onOpenGroups();
+                      else if (item.id === 'challenges') onOpenChallenges();
+                      else if (item.id === 'connect') {
+                        if (onOpenBuddies) onOpenBuddies();
+                        else if (onOpenMentors) onOpenMentors();
+                      }
+                    }}
+                  >
+                    <Text style={[styles.segmentBtnText, on && styles.segmentBtnTextOn]}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {/* Personalized Gym Busyness Section */}
-            <View style={styles.meterContainer}>
-              <View style={styles.meterTitleRow}>
-                <Ionicons name="flame" size={20} color="#C85A17" style={{ marginRight: 6 }} />
-                <Text style={styles.meterTitle}>Your Campus Gym Busyness</Text>
-              </View>
-
-              <View style={styles.meterCampusRow}>
-                {displayedCampuses.map((code) => {
-                  const info = gymStatuses[code];
-                  const statusColor =
-                    info?.status === 'Quiet'
-                      ? '#16a34a'
-                      : info?.status === 'Moderate'
-                      ? '#d97706'
-                      : '#dc2626';
-
-                  return (
-                    <TouchableOpacity
-                      key={`meter-${code}`}
-                      style={[
-                        styles.meterCard,
-                        selectedCampusForMeter === code && styles.meterCardSelected,
-                      ]}
-                      onPress={() => setSelectedCampusForMeter(code)}
-                    >
-                      <Text style={styles.meterCampusText}>{code}</Text>
-                      <Text style={[styles.meterBadgeText, { color: statusColor }]}>
-                        {info?.status || 'Unknown'}
-                      </Text>
-                      <Text style={styles.meterTimeText}>{info?.lastUpdated}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
+            {onOpenMentorHub ? (
               <TouchableOpacity
-                style={styles.toggleCampusesBtn}
-                onPress={() => setShowOtherCampuses(!showOtherCampuses)}
+                style={[
+                  styles.gymPill,
+                  styles.gymPillOn,
+                  {
+                    flex: 0,
+                    flexDirection: 'row',
+                    alignSelf: 'flex-start',
+                    marginBottom: 12,
+                    paddingHorizontal: 14,
+                    alignItems: 'center',
+                  },
+                ]}
+                onPress={onOpenMentorHub}
+                activeOpacity={0.88}
               >
-                <Text style={styles.toggleCampusesText}>
-                  {showOtherCampuses ? 'Hide other campuses' : 'See other campuses'}
-                </Text>
+                <Ionicons name="ribbon-outline" size={14} color={colors.brand} style={{ marginRight: 8 }} />
+                <Text style={styles.gymPillCode}>Mentor Hub · mentees & guidance</Text>
               </TouchableOpacity>
+            ) : null}
 
-              {gymStatuses[selectedCampusForMeter]?.note && (
-                <View style={styles.noteRow}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={14} color="#334155" style={{ marginRight: 4 }} />
-                  <Text style={styles.meterNote}>
-                    "{gymStatuses[selectedCampusForMeter].note}" —{' '}
-                    <Text style={{ fontWeight: 'bold' }}>
-                      {gymStatuses[selectedCampusForMeter].reportedBy}
-                    </Text>
-                  </Text>
+            <TouchableOpacity
+              style={[
+                styles.gymPill,
+                styles.gymPillOn,
+                {
+                  flex: 0,
+                  flexDirection: 'row',
+                  alignSelf: 'flex-start',
+                  marginBottom: 12,
+                  paddingHorizontal: 14,
+                },
+              ]}
+              onPress={() => {
+                setSelectedCampusForMeter(resCode);
+                setShowGymStatus((v) => !v);
+                setShowOtherCampuses(false);
+              }}
+            >
+              <Text style={styles.gymPillCode}>
+                {resCode} gym · {gymStatuses[resCode]?.status || 'Check in'}
+              </Text>
+              <Ionicons
+                name={showGymStatus ? 'chevron-up' : 'chevron-down'}
+                size={14}
+                color={colors.brand}
+                style={{ marginLeft: 8 }}
+              />
+            </TouchableOpacity>
+
+            {showGymStatus ? (
+              <>
+                <View style={styles.gymPillRow}>
+                  {['APK', 'APB', 'DFC', 'SWC'].map((code) => {
+                    const info = gymStatuses[code];
+                    const statusColor =
+                      info?.status === 'Quiet'
+                        ? '#FFB27A'
+                        : info?.status === 'Moderate'
+                          ? colors.brand
+                          : info?.status === 'Packed'
+                            ? '#C2410C'
+                            : colors.muted;
+                    const on = selectedCampusForMeter === code;
+                    return (
+                      <TouchableOpacity
+                        key={`pill-${code}`}
+                        style={[styles.gymPill, on && styles.gymPillOn]}
+                        onPress={() => {
+                          setSelectedCampusForMeter(code);
+                          setShowOtherCampuses(true);
+                        }}
+                      >
+                        <Text style={styles.gymPillCode}>{code}</Text>
+                        <Text style={[styles.gymPillStatus, { color: statusColor }]}>
+                          {info?.status || '—'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              )}
+                {busynessPanel}
+              </>
+            ) : null}
 
-              <View style={styles.checkInBox}>
-                <Text style={styles.checkInLabel}>
-                  Are you currently at {selectedCampusForMeter} Gym? Update Status:
-                </Text>
+            {!showMoreCompose ? (
+              <TouchableOpacity
+                style={styles.workoutTriggerButton}
+                onPress={() => setShowMoreCompose(true)}
+              >
+                <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.workoutTriggerText}>Share with campus</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.composeGlass}>
+                {newPostImage ? (
+                  <View style={styles.imagePreviewWrap}>
+                    <Image source={{ uri: newPostImage }} style={styles.imagePreview} />
+                    <TouchableOpacity style={styles.removeImageButton} onPress={handleRemoveImage}>
+                      <Ionicons name="close" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
 
                 <TextInput
-                  style={[styles.input, { marginRight: 0, marginBottom: 8 }]}
-                  placeholder="Optional note (e.g. Squat rack available)..."
-                  value={busynessNote}
-                  onChangeText={setBusynessNote}
+                  style={[styles.input, styles.captionInput]}
+                  placeholder={newPostImage ? 'Write a caption...' : 'Share with campus...'}
+                  placeholderTextColor={colors.muted}
+                  value={newPost}
+                  onChangeText={setNewPost}
+                  multiline
                 />
 
-                <View style={styles.busynessBtnRow}>
-                  <TouchableOpacity
-                    style={[styles.statusBtn, styles.btnQuiet]}
-                    onPress={() => handleUpdateBusyness('Quiet')}
-                  >
-                    <Ionicons name="radio-button-on" size={12} color="#16a34a" style={{ marginRight: 4 }} />
-                    <Text style={styles.statusBtnText}>Quiet</Text>
+                <View style={styles.postActionsRow}>
+                  <TouchableOpacity style={styles.photoButton} onPress={handlePickImage}>
+                    <Ionicons name="camera-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
+                    <Text style={styles.photoButtonText}>{newPostImage ? 'Change' : 'Photo'}</Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.statusBtn, styles.btnModerate]}
-                    onPress={() => handleUpdateBusyness('Moderate')}
-                  >
-                    <Ionicons name="radio-button-on" size={12} color="#d97706" style={{ marginRight: 4 }} />
-                    <Text style={styles.statusBtnText}>Moderate</Text>
+                  <TouchableOpacity style={styles.photoButton} onPress={() => setIsWorkoutModalOpen(true)}>
+                    <Ionicons name="barbell-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
+                    <Text style={styles.photoButtonText}>Workout</Text>
                   </TouchableOpacity>
-
                   <TouchableOpacity
-                    style={[styles.statusBtn, styles.btnPacked]}
-                    onPress={() => handleUpdateBusyness('Packed')}
+                    style={styles.photoButton}
+                    onPress={() => {
+                      setSelectedCampusForMeter(resCode);
+                      setShowGymStatus(true);
+                    }}
                   >
-                    <Ionicons name="radio-button-on" size={12} color="#dc2626" style={{ marginRight: 4 }} />
-                    <Text style={styles.statusBtnText}>Packed</Text>
+                    <Ionicons name="fitness-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
+                    <Text style={styles.photoButtonText}>Check-in</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.postButton} onPress={handleAddPost}>
+                    <Text style={styles.postButtonText}>Post</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </View>
 
-            {/* Share Workout Log Action Trigger */}
-            <TouchableOpacity
-              style={styles.workoutTriggerButton}
-              onPress={() => setIsWorkoutModalOpen(true)}
-            >
-              <Ionicons name="barbell-outline" size={18} color="#f8fafc" style={{ marginRight: 8 }} />
-              <Text style={styles.workoutTriggerText}>Log Workout with Stats & Selfie</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.recipeTriggerButton}
-              onPress={() => setIsRecipeModalOpen(true)}
-            >
-              <Ionicons name="restaurant-outline" size={18} color="#9A3412" style={{ marginRight: 8 }} />
-              <Text style={styles.recipeTriggerText}>Share gym recipe & cook video</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.recipeTriggerButton}
-              onPress={() => setIsClipModalOpen(true)}
-            >
-              <Ionicons name="musical-notes-outline" size={18} color="#9A3412" style={{ marginRight: 8 }} />
-              <Text style={styles.recipeTriggerText}>Share workout clip & music</Text>
-            </TouchableOpacity>
-
-            {/* Post Creation Box */}
-            {newPostImage && (
-              <View style={styles.imagePreviewWrap}>
-                <Image source={{ uri: newPostImage }} style={styles.imagePreview} />
-                <TouchableOpacity style={styles.removeImageButton} onPress={handleRemoveImage}>
-                  <Ionicons name="close" size={16} color="#fff" />
+                <TouchableOpacity style={styles.moreCompose} onPress={() => setShowMoreCompose(false)}>
+                  <Text style={styles.moreComposeText}>Close composer</Text>
                 </TouchableOpacity>
               </View>
             )}
-
-            <TextInput
-              style={[styles.input, styles.captionInput]}
-              placeholder={newPostImage ? 'Write a caption...' : "What's on your mind?"}
-              placeholderTextColor={colors.muted}
-              value={newPost}
-              onChangeText={setNewPost}
-              multiline
-            />
-
-            <View style={styles.postActionsRow}>
-              <TouchableOpacity style={styles.photoButton} onPress={handlePickImage}>
-                <Ionicons name="camera-outline" size={16} color="#C85A17" style={{ marginRight: 4 }} />
-                <Text style={styles.photoButtonText}>
-                  {newPostImage ? 'Change Photo' : 'Add Photo'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.postButton} onPress={handleAddPost}>
-                <Text style={styles.postButtonText}>Post</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.sectionTitle}>Community Posts Feed</Text>
           </>
         }
-        data={posts}
+        data={visiblePosts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => {
           const isCommenting = activeCommentPostId === item.id;
@@ -1277,30 +1058,33 @@ function CampusCommunityScreen({
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.author}>{item.author}</Text>
-                  {item.isCheckIn && (
+                  <Text style={[styles.darkMeta, { color: colors.muted }]}>{item.meta || 'UJ student'}</Text>
+                  {item.isCheckIn ? (
                     <View style={styles.tagRow}>
-                      <Ionicons name="location-outline" size={12} color="#166534" style={{ marginRight: 2 }} />
-                      <Text style={styles.checkInTag}>Gym Check-In • {item.campus}</Text>
+                      <Ionicons name="location-outline" size={12} color={colors.brand} style={{ marginRight: 2 }} />
+                      <Text style={[styles.checkInTag, { color: colors.brand }]}>
+                        Gym Check-In • {item.campus} • {item.busynessStatus}
+                      </Text>
                     </View>
-                  )}
-                  {item.recipe && (
+                  ) : null}
+                  {item.recipe ? (
                     <View style={styles.tagRow}>
-                      <Ionicons name="restaurant-outline" size={12} color="#9A3412" style={{ marginRight: 2 }} />
+                      <Ionicons name="restaurant-outline" size={12} color={colors.brand} style={{ marginRight: 2 }} />
                       <Text style={styles.recipeTag}>Gym recipe • {item.recipe.goal}</Text>
                     </View>
-                  )}
-                  {item.workoutClip && (
+                  ) : null}
+                  {item.workoutClip ? (
                     <View style={styles.tagRow}>
-                      <Ionicons name="musical-notes-outline" size={12} color="#9A3412" style={{ marginRight: 2 }} />
+                      <Ionicons name="musical-notes-outline" size={12} color={colors.brand} style={{ marginRight: 2 }} />
                       <Text style={styles.recipeTag}>
                         Workout clip • {item.workoutClip.musicTitle}
                       </Text>
                     </View>
-                  )}
+                  ) : null}
                 </View>
                 {isOwnPost(item) ? (
                   <TouchableOpacity onPress={() => handleDeletePost(item)} hitSlop={8}>
-                    <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+                    <Ionicons name="trash-outline" size={18} color={colors.muted} />
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -1309,14 +1093,14 @@ function CampusCommunityScreen({
               {item.workoutStats && (
                 <View style={styles.workoutCardBadge}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                    <Ionicons name="flash-outline" size={16} color="#9A3412" style={{ marginRight: 4 }} />
+                    <Ionicons name="flash-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
                     <Text style={styles.workoutCardTitle}>
                       {item.workoutStats.title}
                     </Text>
                   </View>
                   <View style={styles.workoutStatsRow}>
                     <View style={styles.statChip}>
-                      <Ionicons name="time-outline" size={12} color="#64748b" style={{ marginRight: 4 }} />
+                      <Ionicons name="time-outline" size={12} color={colors.muted} style={{ marginRight: 4 }} />
                       <Text style={styles.statChipLabel}>Duration: </Text>
                       <Text style={styles.statChipVal}>
                         {item.workoutStats.durationMinutes} mins
@@ -1324,7 +1108,7 @@ function CampusCommunityScreen({
                     </View>
                     {item.workoutStats.totalWeightKg && (
                       <View style={styles.statChip}>
-                        <Ionicons name="barbell-outline" size={12} color="#64748b" style={{ marginRight: 4 }} />
+                        <Ionicons name="barbell-outline" size={12} color={colors.muted} style={{ marginRight: 4 }} />
                         <Text style={styles.statChipLabel}>Vol: </Text>
                         <Text style={styles.statChipVal}>
                           {item.workoutStats.totalWeightKg} kg
@@ -1333,7 +1117,7 @@ function CampusCommunityScreen({
                     )}
                     {item.workoutStats.distanceKm && (
                       <View style={styles.statChip}>
-                        <Ionicons name="walk-outline" size={12} color="#64748b" style={{ marginRight: 4 }} />
+                        <Ionicons name="walk-outline" size={12} color={colors.muted} style={{ marginRight: 4 }} />
                         <Text style={styles.statChipLabel}>Dist: </Text>
                         <Text style={styles.statChipVal}>
                           {item.workoutStats.distanceKm} km
@@ -1372,29 +1156,56 @@ function CampusCommunityScreen({
                 </View>
               )}
               {item.workoutClip?.videoUri ? <WorkoutClipCard clip={item.workoutClip} /> : null}
+              {!!item.text ? <Text style={styles.postText}>{item.text}</Text> : null}
               {item.imageUri && (
                 <SafeImage
                   uri={typeof item.imageUri === 'string' ? item.imageUri : item.imageUri?.uri}
                   style={styles.postImage}
                 />
               )}
-              {!!item.text && <Text style={styles.postText}>{item.text}</Text>}
+              {postTags(item).length ? (
+                <View style={styles.darkTagRow}>
+                  {postTags(item).map((tag) => (
+                    <View key={tag} style={styles.darkTag}>
+                      <Text style={[styles.darkTagText, { color: colors.text }]}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
 
               <View style={styles.postFooterRow}>
-                <TouchableOpacity onPress={() => handleLike(item.id)} style={styles.footerActionRow}>
-                  <Ionicons name="thumbs-up-outline" size={16} color="#C85A17" style={{ marginRight: 4 }} />
-                  <Text style={styles.likeText}>{item.likes}</Text>
-                </TouchableOpacity>
+                <View style={styles.darkFooterLeft}>
+                  <TouchableOpacity onPress={() => handleLike(item.id)} style={styles.footerActionRow}>
+                    <Ionicons
+                      name="heart-outline"
+                      size={16}
+                      color={colors.brand}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={[styles.likeText, { color: colors.text }]}>{item.likes}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.footerActionRow}
+                    onPress={() =>
+                      setActiveCommentPostId(isCommenting ? null : item.id)
+                    }
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={16}
+                      color={colors.text}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={[styles.commentBtnText, { color: colors.text }]}>
+                      Comments ({item.comments.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
-                  style={styles.footerActionRow}
-                  onPress={() =>
-                    setActiveCommentPostId(isCommenting ? null : item.id)
-                  }
+                  onPress={() => Share.share({ message: item.text || `${item.author} on UFitness` })}
+                  hitSlop={8}
                 >
-                  <Ionicons name="chatbox-outline" size={16} color="#4b5563" style={{ marginRight: 4 }} />
-                  <Text style={styles.commentBtnText}>
-                    Comments ({item.comments.length})
-                  </Text>
+                  <Ionicons name="share-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
               </View>
 
@@ -1454,7 +1265,7 @@ function CampusCommunityScreen({
               </View>
             ) : (
               <TouchableOpacity style={styles.photoUploadButton} onPress={handlePickWorkoutSelfie}>
-                <Ionicons name="camera-outline" size={20} color="#C85A17" style={{ marginRight: 6 }} />
+                <Ionicons name="camera-outline" size={20} color={colors.brand} style={{ marginRight: 6 }} />
                 <Text style={styles.photoUploadText}>Add Gym Selfie or Photo</Text>
               </TouchableOpacity>
             )}
@@ -1660,11 +1471,11 @@ function CampusCommunityScreen({
             ) : (
               <View style={styles.postActionsRow}>
                 <TouchableOpacity style={styles.photoButton} onPress={() => handlePickWorkoutClip(true)}>
-                  <Ionicons name="videocam-outline" size={16} color="#C85A17" style={{ marginRight: 4 }} />
+                  <Ionicons name="videocam-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
                   <Text style={styles.photoButtonText}>Record</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.photoButton} onPress={() => handlePickWorkoutClip(false)}>
-                  <Ionicons name="images-outline" size={16} color="#C85A17" style={{ marginRight: 4 }} />
+                  <Ionicons name="images-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
                   <Text style={styles.photoButtonText}>Pick from library</Text>
                 </TouchableOpacity>
               </View>
@@ -1732,12 +1543,14 @@ function CampusCommunityScreen({
 function GroupsScreen({
   groups,
   setGroups,
+  actor,
   onBack,
   onOpenGroup,
   onJoinGroup,
 }: {
   groups: Group[];
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
+  actor: { uid: string; name: string; campus: string };
   onBack: () => void;
   onOpenGroup: (id: string) => void;
   onJoinGroup: (id: string) => void;
@@ -1771,15 +1584,16 @@ function GroupsScreen({
     const id = 'g' + Date.now().toString();
     const newGroup: Group = {
       id,
-      name: newGroupName,
+      name: newGroupName.trim(),
       campus: selectedCampus,
       link: `myapp://group/${id}`,
-      imageUri: newGroupImage 
-        ? { uri: newGroupImage } 
+      imageUri: newGroupImage
+        ? { uri: newGroupImage }
         : { uri: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80' },
-      status: 'none',
+      status: 'joined',
     };
-    setGroups((current) => [{ ...newGroup, status: 'joined' as const }, ...current]);
+    setGroups((current) => [newGroup, ...current]);
+    joinGroupLive(id, actor, newGroup);
     setNewGroupName('');
     setNewGroupImage(null);
     onOpenGroup(id);
@@ -1799,7 +1613,7 @@ function GroupsScreen({
       ListHeaderComponent={
         <>
           <TouchableOpacity onPress={onBack} style={styles.backRow}>
-            <Ionicons name="arrow-back" size={20} color="#C85A17" />
+            <Ionicons name="arrow-back" size={20} color={colors.brand} />
             <Text style={styles.backText}>Back to Feed</Text>
           </TouchableOpacity>
 
@@ -1838,7 +1652,7 @@ function GroupsScreen({
             )}
             <View style={styles.postActionsRow}>
               <TouchableOpacity style={styles.photoButton} onPress={handlePickImage}>
-                <Ionicons name="image-outline" size={16} color="#C85A17" style={{ marginRight: 4 }} />
+                <Ionicons name="image-outline" size={16} color={colors.brand} style={{ marginRight: 4 }} />
                 <Text style={styles.photoButtonText}>Cover Photo</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.postButton} onPress={handleCreateGroup}>
@@ -1884,7 +1698,7 @@ function GroupsScreen({
                 <Text style={[styles.rowTextBold, styles.linkText]}>{item.name}</Text>
                 {item.campus && (
                   <View style={styles.tagRow}>
-                    <Ionicons name="location-outline" size={12} color="#4b5563" style={{ marginRight: 2 }} />
+                    <Ionicons name="location-outline" size={12} color={colors.muted} style={{ marginRight: 2 }} />
                     <Text style={styles.campusBadge}>{item.campus.split(' ')[0]}</Text>
                   </View>
                 )}
@@ -1919,12 +1733,53 @@ function GroupDetailScreen({
   onJoin: () => void;
   onLeave: () => void;
 }) {
-  const { styles } = useCommunityStyles();
+  const { styles, colors } = useCommunityStyles();
   const page = getGroupPage(group);
   const joined = group?.status === 'joined';
-  const members = joined
-    ? [{ name: 'You', role: 'Member' }, ...page.members.filter((member) => member.name !== 'You')]
-    : page.members;
+  const [liveMembers, setLiveMembers] = useState<{ name: string; role: string }[]>([]);
+  const [messages, setMessages] = useState<{ id: string; author: string; text: string; time: string }[]>([]);
+  const [draft, setDraft] = useState('');
+  const { profile: appProfile } = useApp();
+
+  useEffect(() => {
+    let alive = true;
+    loadGroupMembers(group?.id).then((rows) => {
+      if (alive) setLiveMembers(rows);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [group?.id, joined]);
+
+  useEffect(() => {
+    if (!joined || !group?.id) {
+      setMessages([]);
+      return undefined;
+    }
+    let alive = true;
+    loadGroupMessages(group.id).then((rows) => {
+      if (alive) setMessages(rows);
+    });
+    const unsubscribe = subscribeGroupChat(group.id, (message) => {
+      setMessages((current) => (current.some((item) => item.id === message.id) ? current : [...current, message]));
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [group?.id, joined]);
+
+  const sendChat = async () => {
+    const text = draft.trim();
+    if (!text || !group?.id) return;
+    setDraft('');
+    const saved = await sendGroupMessage(group.id, { body: text });
+    if (saved) {
+      setMessages((current) => (current.some((item) => item.id === saved.id) ? current : [...current, saved]));
+    }
+  };
+
+  const members = liveMembers;
 
   return (
     <FlatList
@@ -1933,7 +1788,7 @@ function GroupDetailScreen({
       ListHeaderComponent={
         <>
           <TouchableOpacity onPress={onBack} style={styles.backRow}>
-            <Ionicons name="arrow-back" size={20} color="#C85A17" />
+            <Ionicons name="arrow-back" size={20} color={colors.brand} />
             <Text style={styles.backText}>Back to Groups</Text>
           </TouchableOpacity>
           {group?.imageUri ? (
@@ -1946,7 +1801,7 @@ function GroupDetailScreen({
           <Text style={styles.subHeading}>{page.about}</Text>
           {group?.campus ? (
             <View style={[styles.tagRow, { marginBottom: 8 }]}>
-              <Ionicons name="location-outline" size={14} color="#4b5563" style={{ marginRight: 4 }} />
+              <Ionicons name="location-outline" size={14} color={colors.muted} style={{ marginRight: 4 }} />
               <Text style={styles.campusBadge}>{group.campus.split(' ')[0]}</Text>
             </View>
           ) : null}
@@ -1956,8 +1811,10 @@ function GroupDetailScreen({
             <Text style={styles.challengeDesc}>{page.nextSession}</Text>
             <Text style={styles.linkSubtext}>
               {joined
-                ? 'You are in. When live groups land, this is where members see the same board.'
-                : 'Join when you are ready. The board stays mock until more people show up.'}
+                ? liveMembers.length
+                  ? 'You are in. Members below are students who joined from their own phones.'
+                  : 'You are in. Other signed-in students appear here when they join.'
+                : 'Join to add yourself to this group. Other students will see you on the member list.'}
             </Text>
           </View>
 
@@ -1981,16 +1838,29 @@ function GroupDetailScreen({
             </View>
           ))}
 
-          <Text style={styles.sectionTitle}>Group board</Text>
+          <Text style={styles.sectionTitle}>Group chat</Text>
           {!joined ? (
-            <Text style={styles.subHeading}>Join to read the board and post when this group goes live.</Text>
-          ) : null}
+            <Text style={styles.subHeading}>Join to read and send messages. They show up for everyone in this group.</Text>
+          ) : (
+            <View style={styles.rowCard}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Message the group"
+                placeholderTextColor={colors.muted}
+                style={[styles.linkSubtext, { flex: 1, color: colors.text, paddingVertical: 8 }]}
+              />
+              <TouchableOpacity style={styles.smallButton} onPress={sendChat}>
+                <Text style={styles.smallButtonText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </>
       }
-      data={joined ? page.posts : []}
+      data={joined ? messages : []}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
-        joined ? <Text style={styles.subHeading}>No posts yet. This board is ready when people join.</Text> : null
+        joined ? <Text style={styles.subHeading}>No messages yet. Say hello.</Text> : null
       }
       renderItem={({ item }) => (
         <View style={styles.card}>
@@ -2014,7 +1884,7 @@ function ChallengesScreen({
   onBack: () => void;
   onOpenChallengeDetail: (id: string) => void;
 }) {
-  const { styles } = useCommunityStyles();
+  const { styles, colors } = useCommunityStyles();
   const toggleChallenge = (id: string) => {
     setChallenges(
       challenges.map((c) => (c.id === id ? { ...c, joined: !c.joined } : c))
@@ -2028,7 +1898,7 @@ function ChallengesScreen({
       ListHeaderComponent={
         <>
           <TouchableOpacity onPress={onBack} style={styles.backRow}>
-            <Ionicons name="arrow-back" size={20} color="#C85A17" />
+            <Ionicons name="arrow-back" size={20} color={colors.brand} />
             <Text style={styles.backText}>Back to Feed</Text>
           </TouchableOpacity>
           <Text style={styles.heading}>Fitness Challenges</Text>
@@ -2059,7 +1929,7 @@ function ChallengesScreen({
 
               {/* Campus Performance Preview */}
               <View style={styles.leaderboardBadge}>
-                <Ionicons name="trophy-outline" size={14} color="#92400e" style={{ marginRight: 4 }} />
+                <Ionicons name="trophy-outline" size={14} color={colors.brand} style={{ marginRight: 4 }} />
                 <Text style={styles.leaderboardBadgeText}>
                   Leading Campus: <Text style={{ fontWeight: 'bold' }}>{topCampus.campusCode}</Text> ({topCampus.completedCount} finished)
                 </Text>
@@ -2070,7 +1940,7 @@ function ChallengesScreen({
                   style={styles.viewPlanBtn}
                   onPress={() => onOpenChallengeDetail(item.id)}
                 >
-                  <Ionicons name="stats-chart-outline" size={14} color="#C85A17" style={{ marginRight: 4 }} />
+                  <Ionicons name="stats-chart-outline" size={14} color={colors.brand} style={{ marginRight: 4 }} />
                   <Text style={styles.viewPlanBtnText}>Campus Leaderboard & Plan</Text>
                 </TouchableOpacity>
 
@@ -2101,7 +1971,7 @@ function ChallengeDetailScreen({
   challenge: Challenge;
   onBack: () => void;
 }) {
-  const { styles } = useCommunityStyles();
+  const { styles, colors } = useCommunityStyles();
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'tracker'>('tracker');
   const [completedDays, setCompletedDays] = useState<number[]>([]);
 
@@ -2126,7 +1996,7 @@ function ChallengeDetailScreen({
       ListHeaderComponent={
         <>
           <TouchableOpacity onPress={onBack} style={styles.backRow}>
-            <Ionicons name="arrow-back" size={20} color="#C85A17" />
+            <Ionicons name="arrow-back" size={20} color={colors.brand} />
             <Text style={styles.backText}>Back to Challenges</Text>
           </TouchableOpacity>
           <Text style={styles.heading}>{challenge.name}</Text>
@@ -2138,7 +2008,7 @@ function ChallengeDetailScreen({
               style={[styles.tabButton, activeTab === 'tracker' && styles.tabActive]}
               onPress={() => setActiveTab('tracker')}
             >
-              <Ionicons name="clipboard-outline" size={16} color={activeTab === 'tracker' ? '#fff' : '#4b5563'} style={{ marginRight: 6 }} />
+              <Ionicons name="clipboard-outline" size={16} color={activeTab === 'tracker' ? '#fff' : colors.muted} style={{ marginRight: 6 }} />
               <Text style={[styles.tabText, activeTab === 'tracker' && styles.tabTextActive]}>
                 My Workout Plan
               </Text>
@@ -2147,7 +2017,7 @@ function ChallengeDetailScreen({
               style={[styles.tabButton, activeTab === 'leaderboard' && styles.tabActive]}
               onPress={() => setActiveTab('leaderboard')}
             >
-              <Ionicons name="podium-outline" size={16} color={activeTab === 'leaderboard' ? '#fff' : '#4b5563'} style={{ marginRight: 6 }} />
+              <Ionicons name="podium-outline" size={16} color={activeTab === 'leaderboard' ? '#fff' : colors.muted} style={{ marginRight: 6 }} />
               <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.tabTextActive]}>
                 Campus Leaderboard
               </Text>
@@ -2203,7 +2073,7 @@ function ChallengeDetailScreen({
               <Ionicons
                 name={done ? "checkbox" : "square-outline"}
                 size={20}
-                color={done ? "#16a34a" : "#9ca3af"}
+                color={done ? "#16a34a" : colors.muted}
               />
             )}
           </TouchableOpacity>
@@ -2213,418 +2083,3 @@ function ChallengeDetailScreen({
   );
 }
 
-function createStyles(colors: { background: string; card: string; text: string; muted: string; overlay: string; input: string; border: string }, isDark: boolean) {
-  return StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContainer: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { padding: 20 },
-  list: { flex: 1, backgroundColor: colors.background },
-  listContent: { padding: 16, flexGrow: 1 },
-  homeContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  heading: { fontSize: 22, fontWeight: 'bold', marginBottom: 4, color: colors.text },
-  subHeading: { fontSize: 14, color: colors.muted, marginBottom: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 12, marginBottom: 10, color: colors.text },
-  backRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  backText: { color: '#C85A17', fontSize: 15, fontWeight: '600', marginLeft: 4 },
-  tagRow: { flexDirection: 'row', alignItems: 'center' },
-  footerActionRow: { flexDirection: 'row', alignItems: 'center' },
-  navButtonsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 10,
-  },
-  navButton: {
-    flexGrow: 1,
-    flexBasis: '46%',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    backgroundColor: isDark ? colors.overlay : '#FFF7ED',
-    borderColor: '#FED7AA',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  navButtonText: { color: '#9A3412', fontWeight: '600', fontSize: 15 },
-  mainButton: {
-    backgroundColor: '#C85A17',
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  submitButton: { marginTop: 24, marginBottom: 40 },
-  mainButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginRight: 8,
-    backgroundColor: colors.input,
-    color: colors.text,
-  },
-  profileInput: {
-    fontSize: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
-    marginRight: 0,
-  },
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: colors.muted, marginBottom: 6 },
-  avatarSection: { alignItems: 'center', marginBottom: 24 },
-  avatarPlaceholder: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: '#e5e7eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    overflow: 'hidden',
-  },
-  iconPlaceholderWrap: { alignItems: 'center', justifyContent: 'center' },
-  avatarPlaceholderText: { color: '#4b5563', fontWeight: '500', fontSize: 12, marginTop: 4 },
-  avatarImage: { width: '100%', height: '100%' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
-  chip: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: colors.overlay,
-  },
-  chipSelected: {
-    borderColor: '#C85A17',
-    backgroundColor: isDark ? colors.overlay : '#FFF7ED',
-  },
-  chipText: { color: colors.text, fontSize: 13, fontWeight: '500' },
-  chipTextSelected: { color: '#C85A17', fontWeight: '600' },
-  profileBadgeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.overlay,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  bannerAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
-  bannerWelcome: { fontSize: 14, fontWeight: '600', color: colors.text },
-  bannerCampusSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
-
-  // Gym Busyness Styles
-  meterContainer: {
-    backgroundColor: colors.overlay,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  meterTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  meterTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  meterCampusRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  meterCard: {
-    flex: 1,
-    backgroundColor: colors.input,
-    borderRadius: 8,
-    padding: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-  },
-  meterCardSelected: { borderColor: '#C85A17', backgroundColor: isDark ? colors.overlay : '#FFF7ED', borderWidth: 2 },
-  meterCampusText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  meterBadgeText: { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  meterTimeText: { fontSize: 10, color: colors.muted, marginTop: 2 },
-  toggleCampusesBtn: {
-    alignSelf: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 10,
-  },
-  toggleCampusesText: { color: '#C85A17', fontWeight: '600', fontSize: 13 },
-  noteRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  meterNote: { fontSize: 12, fontStyle: 'italic', color: '#334155' },
-  checkInBox: {
-    backgroundColor: colors.input,
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  checkInLabel: { fontSize: 12, fontWeight: '600', color: '#475569', marginBottom: 8 },
-  busynessBtnRow: { flexDirection: 'row', gap: 6 },
-  statusBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  btnQuiet: { backgroundColor: '#dcfce7' },
-  btnModerate: { backgroundColor: '#fef3c7' },
-  btnPacked: { backgroundColor: '#fee2e2' },
-  statusBtnText: { fontSize: 12, fontWeight: '700', color: '#1f2937' },
-
-  // Shared Workout Log Styles
-  workoutTriggerButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  workoutTriggerText: { color: '#f8fafc', fontWeight: '700', fontSize: 14 },
-  recipeTriggerButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    backgroundColor: isDark ? colors.overlay : '#FFF7ED',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  recipeTriggerText: { color: '#9A3412', fontWeight: '700', fontSize: 14 },
-  recipeTag: { fontSize: 11, color: '#9A3412', fontWeight: '600' },
-  recipeCardBadge: {
-    backgroundColor: isDark ? colors.overlay : '#FFF7ED',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-  },
-  recipeCardTitle: { fontSize: 16, fontWeight: '800', color: '#9A3412' },
-  recipeCardGoal: { fontSize: 12, fontWeight: '700', color: '#C85A17', marginBottom: 8 },
-  recipeSubHead: { marginTop: 8, marginBottom: 4, fontSize: 12, fontWeight: '800', color: colors.text },
-  recipeLine: { fontSize: 13, lineHeight: 19, color: colors.text, marginBottom: 2 },
-  workoutCardBadge: {
-    backgroundColor: isDark ? colors.overlay : '#FFF7ED',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-  },
-  workoutCardTitle: { fontSize: 15, fontWeight: '700', color: '#9A3412' },
-  workoutStatsRow: { flexDirection: 'row', gap: 8 },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.input,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FFEDD5',
-  },
-  statChipLabel: { fontSize: 10, color: '#64748b' },
-  statChipVal: { fontSize: 12, fontWeight: '700', color: '#1e293b' },
-
-  // Challenge Styles
-  challengeDesc: { fontSize: 13, color: '#4b5563', marginTop: 4, marginBottom: 8 },
-  leaderboardBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginBottom: 10,
-  },
-  leaderboardBadgeText: { fontSize: 12, color: '#92400e' },
-  viewPlanBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
-  viewPlanBtnText: { color: '#C85A17', fontWeight: '600', fontSize: 13 },
-  tabContainer: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: colors.overlay,
-  },
-  tabActive: { backgroundColor: '#C85A17' },
-  tabText: { fontSize: 13, fontWeight: '600', color: '#4b5563' },
-  tabTextActive: { color: '#fff' },
-  leaderboardBox: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 8, marginBottom: 12 },
-  leaderboardRow: { marginBottom: 10 },
-  leaderboardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  campusRankText: { fontWeight: '700', fontSize: 13, color: '#111827' },
-  campusScoreText: { fontSize: 12, color: '#6b7280' },
-  barBackground: { height: 10, backgroundColor: '#e5e7eb', borderRadius: 5, overflow: 'hidden' },
-  barFill: { height: '100%', backgroundColor: '#C85A17' },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    minHeight: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: colors.input,
-    borderRadius: 12,
-    padding: 20,
-    flexGrow: 1,
-  },
-  photoUploadButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: colors.overlay,
-  },
-  photoUploadText: { color: '#C85A17', fontWeight: '600', fontSize: 14 },
-  modalImagePreview: { width: '100%', height: 160, borderRadius: 8 },
-  modalButtonRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },
-  modalCancelBtn: { paddingVertical: 12, paddingHorizontal: 16, justifyContent: 'center' },
-  modalCancelText: { color: '#6b7280', fontWeight: '600' },
-
-  postButton: {
-    backgroundColor: '#C85A17',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  postButtonText: { color: '#fff', fontWeight: '600' },
-  captionInput: { marginBottom: 8, minHeight: 44, textAlignVertical: 'top' },
-  postActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  photoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#C85A17',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  photoButtonText: { color: '#C85A17', fontWeight: '600', fontSize: 13 },
-  imagePreviewWrap: { marginBottom: 8, position: 'relative', alignSelf: 'flex-start' },
-  imagePreview: { width: 120, height: 120, borderRadius: 8 },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  card: { backgroundColor: '#f3f4f6', borderRadius: 8, padding: 12, marginBottom: 12 },
-  checkInPostCard: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' },
-  checkInTag: { fontSize: 11, color: '#166534', fontWeight: '600' },
-  mediaCard: {
-    backgroundColor: colors.overlay,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    marginBottom: 12,
-  },
-  cardImage: { width: '100%', height: 140 },
-  cardBody: { padding: 12 },
-  postHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  postAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
-  postAvatarFallback: { backgroundColor: '#d1d5db', alignItems: 'center', justifyContent: 'center' },
-  fallbackAvatarText: { fontWeight: 'bold', color: '#4b5563', fontSize: 14 },
-  author: { fontWeight: '600', color: colors.text },
-  postImage: { width: '100%', height: 220, borderRadius: 8, marginBottom: 8 },
-  postText: { marginBottom: 8, color: colors.text },
-  postFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  likeText: { color: '#C85A17', fontWeight: '500' },
-  commentBtnText: { color: colors.muted, fontWeight: '500' },
-  commentsContainer: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  commentBubble: {
-    backgroundColor: colors.input,
-    padding: 8,
-    borderRadius: 6,
-    marginBottom: 6,
-  },
-  commentAuthor: { fontWeight: '600', fontSize: 12, color: colors.muted },
-  commentText: { fontSize: 13, color: colors.text, marginTop: 2 },
-  commentInputRow: {
-    flexDirection: 'row',
-    marginTop: 6,
-  },
-  rowCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rowTextBold: { fontSize: 16, fontWeight: '600', flexShrink: 1, marginRight: 8, color: colors.text },
-  campusBadge: { fontSize: 12, color: '#4b5563' },
-  linkSubtext: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  linkText: { color: '#C85A17' },
-  smallButton: {
-    backgroundColor: '#C85A17',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  joinedButton: { backgroundColor: '#9ca3af' },
-  smallButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  createBox: {
-    backgroundColor: colors.overlay,
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 8,
-  },
-  smallPreviewImage: { width: 80, height: 80, borderRadius: 6, marginBottom: 8 },
-  progressText: { color: '#6b7280', marginBottom: 12, fontSize: 14 },
-  dayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: colors.overlay,
-    borderRadius: 8,
-    marginBottom: 6,
-  },
-  dayRowRest: { backgroundColor: '#e5e7eb', opacity: 0.7 },
-  dayRowDone: { backgroundColor: '#dcfce7' },
-  dayNumber: { fontWeight: '600', width: 60 },
-  dayLabel: { flex: 1, color: colors.text },
-  dayLabelRest: { fontStyle: 'italic', color: colors.muted },
-});
-}

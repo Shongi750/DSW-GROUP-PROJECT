@@ -3,40 +3,37 @@ import { useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function WelcomeScreen({ navigation }) {
-  // Animation values
   const fadeIn = useRef(new Animated.Value(0)).current;
-  const scaleUp = useRef(new Animated.Value(0.8)).current;
+  const scaleUp = useRef(new Animated.Value(0.85)).current;
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // 1️⃣ FADE IN + SCALE UP — logo appears smoothly
     Animated.parallel([
       Animated.timing(fadeIn, {
         toValue: 1,
-        duration: 1200,
+        duration: 900,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
       Animated.timing(scaleUp, {
         toValue: 1,
-        duration: 1200,
+        duration: 900,
         easing: Easing.out(Easing.back(1.2)),
         useNativeDriver: true,
       }),
     ]).start();
 
-    // 2️⃣ GENTLE PULSE EFFECT — subtle breathing glow
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
-          toValue: 1.06,
-          duration: 1800,
+          toValue: 1.05,
+          duration: 1600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 1800,
+          duration: 1600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -51,14 +48,13 @@ export default function WelcomeScreen({ navigation }) {
   }, [navigation, fadeIn, scaleUp, pulse]);
 
   return (
-    <LinearGradient
-      colors={["#FFE8D6", "#D4F1E8"]}
-      style={styles.background}
-      start={{ x: 0.8, y: 0 }}
-      end={{ x: 0.2, y: 1 }}
-    >
+    <View style={styles.background}>
+      <LinearGradient
+        colors={["#2A1508", "#140A04", "#0A0A0A"]}
+        locations={[0, 0.45, 1]}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={styles.container}>
-        {/* Animated Logo Card */}
         <Animated.View
           style={[
             styles.logoCard,
@@ -68,17 +64,21 @@ export default function WelcomeScreen({ navigation }) {
             },
           ]}
         >
-          <Text style={styles.logoTextMain}>UFITNESS</Text>
+          <View style={styles.markRow}>
+            <Text style={styles.markU}>U</Text>
+            <Text style={styles.markF}>FITNESS</Text>
+          </View>
           <Text style={styles.logoSubtitle}>YOUR CAMPUS FITNESS COMPANION</Text>
         </Animated.View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   background: {
     flex: 1,
+    backgroundColor: "#0A0A0A",
   },
   container: {
     flex: 1,
@@ -87,27 +87,40 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   logoCard: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 30,
-    paddingHorizontal: 35,
-    borderRadius: 16,
+    backgroundColor: "rgba(21,21,21,0.9)",
+    borderWidth: 1,
+    borderColor: "#262626",
+    paddingVertical: 34,
+    paddingHorizontal: 40,
+    borderRadius: 6,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowColor: "#FF6A00",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 10,
   },
-  logoTextMain: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#25345F",
-    letterSpacing: 1,
+  markRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+  },
+  markU: {
+    fontFamily: "Anton_400Regular",
+    fontSize: 38,
+    letterSpacing: 1.5,
+    color: "#FFFFFF",
+  },
+  markF: {
+    fontFamily: "Anton_400Regular",
+    fontSize: 38,
+    letterSpacing: 1.5,
+    color: "#FF6A00",
   },
   logoSubtitle: {
     fontSize: 10,
-    color: "#777777",
-    marginTop: 4,
-    letterSpacing: 1.5,
+    color: "#A3A3A3",
+    marginTop: 8,
+    letterSpacing: 2.4,
+    fontWeight: "700",
   },
 });

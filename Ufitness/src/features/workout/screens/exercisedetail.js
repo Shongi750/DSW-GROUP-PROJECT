@@ -34,7 +34,7 @@ export default function ExerciseDetailScreen({ navigation, route }) {
   if (!exercise) {
     return (
       <GlassScreen>
-        <Text className="text-[28px] font-extrabold text-ink">Exercise not found</Text>
+        <Text className="text-[28px] font-display uppercase text-ink">Exercise not found</Text>
       </GlassScreen>
     );
   }
@@ -56,15 +56,15 @@ export default function ExerciseDetailScreen({ navigation, route }) {
     <GlassScreen>
       <View className="mb-2 flex-row items-center justify-between">
         <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-          <Ionicons name="chevron-back" size={22} color="#1A1A1A" />
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-ink">Exercises</Text>
         <TouchableOpacity onPress={() => toggleFavorite(exercise.id)} className="p-2">
-          <Ionicons name={starred ? 'star' : 'star-outline'} size={20} color={starred ? '#BA4A0C' : '#1A1A1A'} />
+          <Ionicons name={starred ? 'star' : 'star-outline'} size={20} color={starred ? '#FF6A00' : '#FFFFFF'} />
         </TouchableOpacity>
       </View>
 
-      <Text className="mb-3 text-[28px] font-extrabold text-ink">{exercise.name}</Text>
+      <Text className="mb-3 text-[28px] font-display uppercase text-ink">{exercise.name}</Text>
       <View className="mb-4 flex-row gap-6">
         <TouchableOpacity onPress={() => setTab('instructions')}>
           <Text className={`text-base font-semibold ${tab === 'instructions' ? 'text-ink underline' : 'text-muted'}`}>

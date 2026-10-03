@@ -1,28 +1,16 @@
 import React from 'react';
-import { Text, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../constants/theme';
+import SharedPrimaryButton from '../../../components/PrimaryButton';
 
-export default function PrimaryButton({ title = 'Start', onPress, icon = 'play' }) {
+/** Thin wrapper — workout screens keep the icon API, shared styling. */
+export default function PrimaryButton({ title = 'Start', onPress, icon = 'play', disabled, variant, style }) {
   return (
-    <TouchableOpacity
-      className="flex-row items-center justify-center gap-2 rounded-full bg-accent py-3.5"
-      style={{
-        backgroundColor: colors.accent,
-        borderRadius: 12,
-        paddingVertical: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-      }}
+    <SharedPrimaryButton
+      title={title}
       onPress={onPress}
-      activeOpacity={0.85}
-    >
-      <Ionicons name={icon} size={16} color={colors.white} />
-      <Text className="text-base font-bold text-white" style={{ color: colors.white, fontSize: 16, fontWeight: '700' }}>
-        {title}
-      </Text>
-    </TouchableOpacity>
+      icon={icon}
+      disabled={disabled}
+      variant={variant}
+      style={[{ marginTop: 0 }, style]}
+    />
   );
 }

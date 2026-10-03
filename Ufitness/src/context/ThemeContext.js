@@ -4,43 +4,100 @@ import { DarkTheme, DefaultTheme } from '@react-navigation/native';
 
 const STORAGE_KEY = 'ufitness.theme.v1';
 
+// Nike + Virgin Active + UJ: dark charcoal product look, warm cream light (secondary).
 export const palettes = {
   light: {
-    background: '#F9F9FB',
+    background: '#F7F2EC',
     card: '#FFFFFF',
-    text: '#1F2933',
-    muted: '#6B7280',
-    border: '#EEF1F3',
-    brand: '#8C3A12',
-    accent: '#E8722C',
+    cardElevated: '#FFF8F2',
+    text: '#14110E',
+    muted: '#6B635C',
+    border: '#E8DFD6',
+    brand: '#FF6A00',
+    accent: '#FF6A00',
+    accentBright: '#FF8A1A',
+    accentSoft: 'rgba(255,106,0,0.10)',
     tabBar: '#FFFFFF',
-    tabInactive: '#6C6C70',
-    signOut: '#1F3A5F',
-    overlay: '#F5F7F8',
+    tabInactive: '#9A9088',
+    signOut: '#C2410C',
+    overlay: '#F0E8E0',
     input: '#FFFFFF',
     status: 'dark',
   },
   dark: {
-    background: '#141210',
-    card: '#1E1C1B',
-    text: '#F4F1EE',
-    muted: '#A8A29E',
-    border: '#2E2A28',
-    brand: '#E8722C',
-    accent: '#E8722C',
-    tabBar: '#1A1817',
-    tabInactive: '#8A8580',
-    signOut: '#E8C9A8',
-    overlay: '#252220',
-    input: '#252220',
+    background: '#0A0A0A',
+    card: '#141414',
+    cardElevated: '#1C1C1C',
+    text: '#FFFFFF',
+    muted: '#9C9C9C',
+    border: '#242424',
+    brand: '#FF6A00',
+    accent: '#FF6A00',
+    accentBright: '#FF8A1A',
+    accentSoft: 'rgba(255,106,0,0.16)',
+    tabBar: '#0A0A0A',
+    tabInactive: '#7A7A7A',
+    signOut: '#FF8A1A',
+    overlay: '#161616',
+    input: '#161616',
     status: 'light',
   },
+};
+
+/** 1px editorial rule — section dividers and card outlines. */
+export const hairline = 'rgba(255,255,255,0.10)';
+
+/**
+ * One glass recipe for photo tabs — do not nest glass-in-glass.
+ * Use PHOTO_GLASS / GlassSurface; avoid inventing new rgba stacks.
+ */
+export const glass = {
+  fill: 'rgba(255,255,255,0.1)',
+  border: 'rgba(255,255,255,0.14)',
+  borderWidth: 1,
+  softFill: 'rgba(255,255,255,0.06)',
+  softBorder: 'rgba(255,255,255,0.1)',
+};
+
+/** Shared layout tokens — Nike/VA surfaces across Home, Workout, Meals, Community. */
+export const spacing = {
+  screen: 20,
+  section: 24,
+  card: 16,
+  gap: 12,
+};
+
+export const radius = {
+  card: 6,
+  image: 6,
+  input: 6,
+  pill: 999,
+  circle: 999,
+  checkbox: 4,
+};
+
+/** Anton — heroes only (name, TODAY, screen titles). Body stays system sans. */
+export const display = {
+  fontFamily: 'Anton_400Regular',
+  letterSpacing: 0.8,
+  textTransform: 'uppercase',
+};
+
+/** Tight type scale — prefer these sizes over one-offs. */
+export const type = {
+  kicker: 11,
+  body: 14,
+  title: 17,
+  hero: 28,
+  display: 34,
+  kickerWeight: '700',
+  kickerTracking: 1.4,
 };
 
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const [scheme, setScheme] = useState('light');
+  const [scheme, setScheme] = useState('dark');
 
   useEffect(() => {
     (async () => {
@@ -69,11 +126,15 @@ export function ThemeProvider({ children }) {
     const palette = palettes[scheme];
     const root = document.documentElement;
     root.classList.toggle('uf-dark', scheme === 'dark');
+    root.classList.toggle('uf-light', scheme === 'light');
     root.style.setProperty('--color-background', palette.background);
     root.style.setProperty('--color-surface', palette.overlay);
     root.style.setProperty('--color-ink', palette.text);
     root.style.setProperty('--color-muted', palette.muted);
-    root.style.setProperty('--color-glass', scheme === 'dark' ? 'rgba(30,28,27,0.94)' : 'rgba(255,255,255,0.86)');
+    root.style.setProperty(
+      '--color-glass',
+      scheme === 'dark' ? '#141414' : '#FFFFFF'
+    );
     root.style.background = palette.background;
     document.body.style.background = palette.background;
   }, [scheme]);
@@ -86,14 +147,26 @@ export function ThemeProvider({ children }) {
       colors: {
         ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
         primary: colors.accent,
-        background: colors.background,
+        background: 'transparent',
         card: colors.tabBar,
         text: colors.text,
         border: colors.border,
         notification: colors.accent,
       },
     };
-    return { scheme, isDark, colors, setTheme, toggleTheme, navigationTheme };
+    return {
+      scheme,
+      isDark,
+      colors,
+      spacing,
+      radius,
+      display,
+      type,
+      glass,
+      setTheme,
+      toggleTheme,
+      navigationTheme,
+    };
   }, [scheme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

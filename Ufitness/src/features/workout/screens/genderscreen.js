@@ -29,7 +29,7 @@ export default function GenderScreen({ navigation }) {
         <Text className="font-bold text-muted">Skip</Text>
       </TouchableOpacity>
 
-      <Text className="mt-3 text-center text-[28px] font-extrabold text-ink">How do you describe yourself?</Text>
+      <Text className="mt-3 text-center text-[28px] font-display uppercase text-ink">How do you describe yourself?</Text>
       <Text className="mt-2 text-center text-muted">Optional. Workouts stay the same either way.</Text>
 
       <View className="mt-8 flex-row flex-wrap justify-between gap-y-4">
@@ -42,7 +42,7 @@ export default function GenderScreen({ navigation }) {
               onPress={() => setGender(selected ? '' : item.id)}
             >
               <GlassPanel className={`h-[120px] w-full items-center justify-center rounded-[28px] ${selected ? 'border-accent' : ''}`}>
-                <Ionicons name={item.icon} size={40} color={selected ? '#BA4A0C' : '#C8C8C8'} />
+                <Ionicons name={item.icon} size={40} color={selected ? '#FF6A00' : '#C8C8C8'} />
               </GlassPanel>
               <Text className={`mt-2 text-center font-bold ${selected ? 'text-ink' : 'text-muted'}`}>{item.label}</Text>
             </TouchableOpacity>

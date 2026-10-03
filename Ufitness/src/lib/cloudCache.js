@@ -1,8 +1,13 @@
-import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
-import { getDb, getFirebaseAuth } from './firebase';
+import { isSupabaseConfigured, supabase } from './supabase';
+
+let cachedUid = null;
+
+export function setCurrentUid(uid) {
+  cachedUid = uid || null;
+}
 
 export function currentUid() {
-  return getFirebaseAuth()?.currentUser?.uid || null;
+  return cachedUid;
 }
 
 function jsonSafe(value) {
@@ -61,35 +66,44 @@ export function cloudSafeCommunity(state) {
   };
 }
 
-export async function fetchCloudDoc(collection, uid) {
-  const db = getDb();
-  if (!db || !uid) return null;
+export async function fetchCloudDoc(doc, uid = currentUid()) {
+  if (!isSupabaseConfigured || !supabase || !uid || !doc) return null;
   try {
-    const snap = await getDoc(doc(db, collection, uid));
-    return snap.exists() ? snap.data() : null;
+    const { data, error } = await supabase
+      .from('user_docs')
+      .select('data')
+      .eq('user_id', uid)
+      .eq('doc', doc)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.data ?? null;
   } catch {
     return null;
   }
 }
 
-export async function saveCloudDoc(collection, uid, payload) {
-  const db = getDb();
-  if (!db || !uid || !payload) return false;
+export async function saveCloudDoc(doc, uid, data) {
+  if (!isSupabaseConfigured || !supabase || !uid || !doc) return false;
+  const payload = jsonSafe(data);
+  if (!payload) return false;
   try {
-    await setDoc(doc(db, collection, uid), { ...payload, ownerUid: uid, updatedAt: new Date().toISOString() }, { merge: true });
-    return true;
-  } catch (error) {
-    console.warn(`Cloud ${collection} save skipped`, error?.message || error);
+    const { error } = await supabase.from('user_docs').upsert({
+      user_id: uid,
+      doc,
+      data: payload,
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
     return false;
   }
 }
 
-export async function deleteCloudCaches(uid) {
-  const db = getDb();
-  if (!db || !uid) return;
-  await Promise.allSettled([
-    deleteDoc(doc(db, 'mealPlans', uid)),
-    deleteDoc(doc(db, 'communityState', uid)),
-    deleteDoc(doc(db, 'reminders', uid)),
-  ]);
+export async function deleteCloudCaches(uid = currentUid()) {
+  if (!isSupabaseConfigured || !supabase || !uid) return;
+  try {
+    await supabase.from('user_docs').delete().eq('user_id', uid);
+  } catch {
+    /* table may not exist until schema.sql is run */
+  }
 }

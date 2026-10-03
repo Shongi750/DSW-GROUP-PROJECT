@@ -34,7 +34,7 @@ export default function BottomTabs({ activeId, onChange }) {
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.white,
+    backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 8,

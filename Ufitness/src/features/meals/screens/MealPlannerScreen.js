@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import BudgetPicker from '../components/BudgetPicker';
 import CustomDish from '../components/CustomDish';
@@ -9,8 +11,12 @@ import GoalPicker from '../components/GoalPicker';
 import GroceryList from '../components/GroceryList';
 import MealCard from '../components/MealCard';
 import MealDetail from '../components/MealDetail';
+import NutritionHero from '../components/NutritionHero';
+import { StartCard } from '../../../components/StartCard';
+import InspoBackground from '../../../components/InspoBackground';
 import { colors as mealColors } from '../constants/theme';
-import { useTheme } from '../../../context/ThemeContext';
+import { useTheme, spacing, radius, display } from '../../../context/ThemeContext';
+import { PHOTO_GLASS } from '../../../components/PhotoShell';
 import { useApp } from '../../../context/AppContext';
 import { GOALS } from '../data/goals';
 import { DAYS, formatRand, todayDayId } from '../data/planner';
@@ -24,18 +30,30 @@ import {
   nextSlotMeal,
   overlayWeekMeals,
 } from '../lib/buildWeekPlan';
-import { hasLoyaltyHubKey } from '../lib/loyaltyHub';
 import { loadSavedPlan, saveSavedPlan } from '../lib/persist';
 import { shareMealToCommunity } from '../lib/shareToCommunity';
 import { fetchSaStaples, fallbackSaStaples } from '../lib/saFoodApi';
 import { applyStoreList, STORE_FILTERS, storeLabel } from '../lib/stores';
+import { loadEatenToday, logEatenMeal } from '../lib/eaten';
+import { dayMacroPlan, mealProtein, targetsForGoal } from '../lib/nutritionTargets';
+import { scaleMeal } from '../lib/portions';
 
 const CADENCE_IDS = ['daily', 'weekly', 'monthly'];
+const TABS = [
+  { id: 'today', label: 'Today' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'shop', label: 'Shop' },
+];
+
+function mealLogId(meal, dayId) {
+  return `${dayId}-${meal.slot}-${meal.recipeId || meal.id}`;
+}
 
 export default function MealPlannerScreen({ onOpenProfile }) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { profile, updateFields } = useApp();
+  const { user, profile, updateFields } = useApp();
+  const [tab, setTab] = useState('today');
   const [selectedDay, setSelectedDay] = useState(todayDayId);
   const [budget, setBudget] = useState(() => weeklyForFunding(profile?.foodBudgetAmount));
   const weekChips = useMemo(
@@ -57,6 +75,19 @@ export default function MealPlannerScreen({ onOpenProfile }) {
   const [loading, setLoading] = useState(true);
   const [groceries, setGroceries] = useState([]);
   const [hydrated, setHydrated] = useState(false);
+  const [eaten, setEaten] = useState({ items: [], kcal: 0, protein: 0, carbs: 0 });
+
+  const uid = user?.id || profile?.userId;
+
+  const reloadEaten = useCallback(() => {
+    loadEatenToday(uid).then(setEaten);
+  }, [uid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadEaten();
+    }, [reloadEaten]),
+  );
 
   useEffect(() => {
     let alive = true;
@@ -68,10 +99,7 @@ export default function MealPlannerScreen({ onOpenProfile }) {
         if (allowedBudgets.some((item) => item.id === saved.budget)) setBudget(saved.budget);
         else setBudget(weeklyForFunding(profile?.foodBudgetAmount));
         if (GOALS.some((item) => item.id === saved.goal)) setGoal(saved.goal);
-        if (
-          dietHasFlags(saved.dietFilters) &&
-          !dietHasFlags(profile?.dietFilters)
-        ) {
+        if (dietHasFlags(saved.dietFilters) && !dietHasFlags(profile?.dietFilters)) {
           updateFields?.({ dietFilters: mergeDietFilters(saved.dietFilters) });
         }
         if (DAYS.some((item) => item.id === saved.selectedDay)) setSelectedDay(saved.selectedDay);
@@ -158,19 +186,26 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     return () => clearTimeout(timer);
   }, [hydrated, budget, goal, dietFilters, selectedDay, customByKey, swapByKey, storeId, cadence, groceries]);
 
-  const day = DAYS.find((item) => item.id === selectedDay) || DAYS[0];
-  const meals = mealsByDay[selectedDay] || [];
+  const todayId = todayDayId();
+  const activeDayId = tab === 'today' ? todayId : selectedDay;
+  const day = DAYS.find((item) => item.id === activeDayId) || DAYS[0];
+  const meals = mealsByDay[activeDayId] || [];
+  const nextMeal = meals.find((m) => !eaten.items.some((item) => item.id === mealLogId(m, activeDayId))) || meals[0] || null;
   const priced = useMemo(() => applyStoreList(groceries, storeId), [groceries, storeId]);
   const basketTotal = priced
     .filter((item) => item.needed !== false)
     .reduce((sum, item) => sum + Number(item.price || 0), 0);
   const overBudget = basketTotal > budget;
+  const remaining = Math.max(0, budget - basketTotal);
+  const targets = targetsForGoal(goal);
+  const planned = useMemo(() => dayMacroPlan(mealsByDay[todayId] || [], goal), [mealsByDay, todayId, goal]);
+  const eatenIds = useMemo(() => new Set((eaten.items || []).map((item) => item.id)), [eaten.items]);
 
   useEffect(() => {
     if (!hydrated) return;
-    const remaining = remainingAfterGrocery(budget, basketTotal);
-    if (profile.weeklyFoodBudget === budget && profile.foodBudgetRemaining === remaining) return;
-    updateFields({ weeklyFoodBudget: budget, foodBudgetRemaining: remaining });
+    const left = remainingAfterGrocery(budget, basketTotal);
+    if (profile.weeklyFoodBudget === budget && profile.foodBudgetRemaining === left) return;
+    updateFields({ weeklyFoodBudget: budget, foodBudgetRemaining: left });
   }, [hydrated, budget, basketTotal]);
 
   const swapMeal = (meal) => {
@@ -182,16 +217,16 @@ export default function MealPlannerScreen({ onOpenProfile }) {
       );
       return;
     }
-    const dayId = meal.dayId || selectedDay;
+    const dayId = meal.dayId || activeDayId;
     const key = `${dayId}:${meal.slot}`;
-    const planned = plan?.mealsByDay?.[dayId]?.find((item) => item.slot === meal.slot);
+    const plannedMeal = plan?.mealsByDay?.[dayId]?.find((item) => item.slot === meal.slot);
     setCustomByKey((current) => {
       const copy = { ...current };
       delete copy[key];
       return copy;
     });
     setSwapByKey((current) => {
-      if (planned && next.id === planned.recipeId) {
+      if (plannedMeal && next.id === plannedMeal.recipeId) {
         const copy = { ...current };
         delete copy[key];
         return copy;
@@ -201,23 +236,58 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     setSelectedMeal(null);
   };
 
+  const markEaten = async (meal) => {
+    const scaled = meal.recipeId ? scaleMeal(meal.recipeId, goal) : null;
+    const next = await logEatenMeal(uid, {
+      id: mealLogId(meal, activeDayId),
+      title: meal.title,
+      kcal: meal.kcal,
+      protein: mealProtein(meal, goal),
+      carbs: scaled?.carbs || 0,
+    });
+    setEaten(next);
+  };
+
   const sourceLabel = plan
     ? [
         plan.source === 'openfoodfacts'
-          ? `SA foods from Open Food Facts · ${plan.liveCount} products`
-          : 'SA staple meals · offline list',
-        plan.priceSource === 'loyaltyhub'
-          ? `Live shelf prices from LoyaltyHub · ${plan.loyaltyCount} products`
-          : plan.priceCount
-            ? `${plan.priceCount} live ZAR prices from Open Prices`
-            : hasLoyaltyHubKey()
-              ? 'LoyaltyHub key set · waiting for shelf quotes'
-              : 'Add EXPO_PUBLIC_LOYALTYHUB_KEY for Shoprite/Checkers prices',
+          ? `SA campus foods · ${plan.liveCount} products`
+          : 'SA staple meals',
+        plan.priceSource === 'loyaltyhub' || plan.priceCount
+          ? 'Live shelf prices where available'
+          : 'Estimated prices until live shelf quotes load',
       ].join(' · ')
     : '';
 
+  const renderMealList = (list, dayId) =>
+    loading ? (
+      <View style={styles.loading}>
+        <ActivityIndicator color={mealColors.primary} />
+        <Text style={[styles.loadingText, { color: colors.muted }]}>Fetching SA foods and live shelf prices…</Text>
+      </View>
+    ) : (
+      list.map((meal) => (
+        <MealCard
+          key={`${meal.id}-${meal.slot}`}
+          meal={meal}
+          eaten={eatenIds.has(mealLogId(meal, dayId))}
+          onAte={dayId === todayId ? markEaten : undefined}
+          onPress={() => {
+            if (meal.custom) setOwnFor({ ...meal, dayId });
+            else setSelectedMeal(meal);
+          }}
+          onSwap={swapMeal}
+          onCookOwn={(item) => {
+            setSelectedMeal(null);
+            setOwnFor({ ...item, dayId: item.dayId || dayId });
+          }}
+        />
+      ))
+    );
+
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+    <View style={[styles.screen, { backgroundColor: 'transparent' }]}>
+      <InspoBackground plate="meals" />
       <View style={{ paddingTop: insets.top + 6 }}>
         <AppHeader
           onAvatarPress={onOpenProfile}
@@ -230,80 +300,125 @@ export default function MealPlannerScreen({ onOpenProfile }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.title, { color: colors.text }]}>Meal Planner</Text>
-        <Text style={[styles.subtitle, { color: colors.muted }]}>South African meals built around your grocery budget.</Text>
+        <Text style={[styles.title, { color: '#FFFFFF' }]}>Meals</Text>
+        <Text style={[styles.subtitle, { color: '#C9C9C9' }]}>Diary. Plan. Shop — SA campus plates.</Text>
 
-        <BudgetPicker
-          value={budget}
-          onChange={setBudget}
-          items={weekChips}
-        />
-        <GoalPicker value={goal} onChange={setGoal} />
-        <Text style={[styles.source, { color: colors.muted }]}>{sourceLabel}</Text>
-        {plan ? (
-          <Text style={[styles.basket, { color: mealColors.primary }]}>
-            {storeLabel(storeId)} basket {formatRand(basketTotal)} of {formatRand(budget)}
-            {overBudget ? ' · over budget' : ''}
-          </Text>
+        <View style={[styles.segments, PHOTO_GLASS]}>
+          {TABS.map((item) => {
+            const on = tab === item.id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                onPress={() => setTab(item.id)}
+                style={[styles.segment, on && { backgroundColor: colors.accent }]}
+              >
+                <Text style={{ color: on ? '#FFFFFF' : '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {tab === 'today' ? (
+          <>
+            <NutritionHero
+              eatenKcal={eaten.kcal}
+              eatenProtein={eaten.protein}
+              eatenCarbs={eaten.carbs || 0}
+              targetKcal={targets.kcal}
+              targetProtein={targets.protein}
+              targetCarbs={targets.carbs}
+              plannedKcal={planned.kcal}
+            />
+
+            {nextMeal && !loading ? (
+              <>
+                <Text style={[styles.section, { color: '#FFFFFF', marginTop: 16 }]}>Next up</Text>
+                <StartCard
+                  fullWidth
+                  height={200}
+                  image={nextMeal.image}
+                  title={nextMeal.title}
+                  meta={`${nextMeal.slot} · ${nextMeal.kcal} kcal`}
+                  badge={nextMeal.slot}
+                  onPress={() => {
+                    if (nextMeal.custom) setOwnFor({ ...nextMeal, dayId: todayId });
+                    else setSelectedMeal(nextMeal);
+                  }}
+                />
+              </>
+            ) : null}
+
+            <Text style={[styles.section, { color: '#FFFFFF' }]}>{`Today's meals`}</Text>
+            {renderMealList(meals, todayId)}
+          </>
         ) : null}
 
-        <DaySelector days={DAYS} selectedId={selectedDay} onSelect={setSelectedDay} />
+        {tab === 'plan' ? (
+          <>
+            <BudgetPicker value={budget} onChange={setBudget} items={weekChips} />
+            <GoalPicker value={goal} onChange={setGoal} />
+            {sourceLabel ? (
+              <Text style={[styles.source, { color: '#C9C9C9' }]}>{sourceLabel}</Text>
+            ) : null}
 
-        <Text style={[styles.section, { color: colors.text }]}>{`${day.name}'s Meals`}</Text>
-        {loading ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color={mealColors.primary} />
-            <Text style={[styles.loadingText, { color: colors.muted }]}>Fetching SA foods and live shelf prices…</Text>
-          </View>
-        ) : (
-          meals.map((meal) => (
-            <MealCard
-              key={`${meal.id}-${meal.slot}`}
-              meal={meal}
-              onPress={() => {
-                if (meal.custom) setOwnFor({ ...meal, dayId: selectedDay });
-                else setSelectedMeal(meal);
-              }}
-              onSwap={swapMeal}
-              onCookOwn={(item) => {
-                setSelectedMeal(null);
-                setOwnFor({ ...item, dayId: item.dayId || selectedDay });
-              }}
-            />
-          ))
-        )}
+            <DaySelector days={DAYS} selectedId={selectedDay} onSelect={setSelectedDay} />
+            <Text style={[styles.section, { color: '#FFFFFF' }]}>{`${day.name}'s Meals`}</Text>
+            {renderMealList(meals, selectedDay)}
+          </>
+        ) : null}
 
-        <GroceryList
-          items={groceries}
-          products={catalog?.products}
-          liveSpecials={catalog?.specials}
-          priceSource={catalog?.priceSource}
-          loyaltyError={catalog?.loyaltyError}
-          storeId={storeId}
-          onStoreChange={setStoreId}
-          cadence={cadence}
-          onCadenceChange={setCadence}
-          onToggle={(id) =>
-            setGroceries((current) => {
-              if (current.some((item) => item.id === id)) {
-                return current.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item));
+        {tab === 'shop' ? (
+          <>
+            {plan ? (
+              <View style={[styles.budgetBanner, { backgroundColor: colors.accent }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.budgetKicker}>{storeLabel(storeId).toUpperCase()} BASKET</Text>
+                  <Text style={styles.budgetTitle}>
+                    {overBudget ? 'Over budget' : `${formatRand(remaining)} left`}
+                  </Text>
+                  <Text style={styles.budgetSub}>
+                    {formatRand(basketTotal)} of {formatRand(budget)} this week
+                  </Text>
+                </View>
+                <Ionicons name="cart" size={28} color="rgba(10,10,10,0.55)" />
+              </View>
+            ) : null}
+
+            <GroceryList
+              items={groceries}
+              products={catalog?.products}
+              liveSpecials={catalog?.specials}
+              priceSource={catalog?.priceSource}
+              loyaltyError={catalog?.loyaltyError}
+              storeId={storeId}
+              onStoreChange={setStoreId}
+              cadence={cadence}
+              onCadenceChange={setCadence}
+              onToggle={(id) =>
+                setGroceries((current) => {
+                  if (current.some((item) => item.id === id)) {
+                    return current.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item));
+                  }
+                  const extra = catalog?.products?.[id];
+                  if (!extra) return current;
+                  return [...current, { ...groceryRow(id, extra), extra: true }];
+                })
               }
-              const extra = catalog?.products?.[id];
-              if (!extra) return current;
-              return [...current, { ...groceryRow(id, extra), extra: true }];
-            })
-          }
-          onAdd={(item) =>
-            setGroceries((current) =>
-              current.some((row) => row.id === item.id)
-                ? current
-                : [...current, { ...item, extra: true, checked: true, needed: true }]
-            )
-          }
-          onRemove={(id) =>
-            setGroceries((current) => current.filter((item) => !(item.id === id && item.extra)))
-          }
-        />
+              onAdd={(item) =>
+                setGroceries((current) =>
+                  current.some((row) => row.id === item.id)
+                    ? current
+                    : [...current, { ...item, extra: true, checked: true, needed: true }]
+                )
+              }
+              onRemove={(id) =>
+                setGroceries((current) => current.filter((item) => !(item.id === id && item.extra)))
+              }
+            />
+          </>
+        ) : null}
       </ScrollView>
 
       <MealDetail
@@ -322,7 +437,7 @@ export default function MealPlannerScreen({ onOpenProfile }) {
         }}
         onCookOwn={(item) => {
           setSelectedMeal(null);
-          setOwnFor({ ...item, dayId: item.dayId || selectedDay });
+          setOwnFor({ ...item, dayId: item.dayId || activeDayId });
         }}
         onClose={() => setSelectedMeal(null)}
       />
@@ -352,45 +467,86 @@ export default function MealPlannerScreen({ onOpenProfile }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: mealColors.white,
+    backgroundColor: 'transparent',
   },
   scroll: {
     flex: 1,
     minHeight: 0,
+    backgroundColor: 'transparent',
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 28,
+    paddingHorizontal: spacing.section,
+    paddingTop: spacing.card,
+    paddingBottom: 48,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: mealColors.text,
-    letterSpacing: -0.6,
+    ...display,
+    fontSize: 36,
   },
   subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: mealColors.muted,
+    marginTop: 8,
+    marginBottom: 8,
+    fontSize: 15,
+  },
+  segments: {
+    flexDirection: 'row',
+    borderRadius: radius.image,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+    marginBottom: 8,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   source: {
-    marginTop: 10,
+    marginTop: 14,
     fontSize: 12,
-    color: mealColors.muted,
   },
-  basket: {
-    marginTop: 2,
+  budgetBanner: {
+    borderRadius: radius.card,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    marginTop: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  budgetKicker: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: 'rgba(10,10,10,0.65)',
+    marginBottom: 4,
+  },
+  budgetTitle: {
+    ...display,
+    fontSize: 24,
+    letterSpacing: 0.4,
+    color: '#0A0A0A',
+  },
+  budgetSub: {
+    marginTop: 4,
     fontSize: 13,
-    fontWeight: '700',
-    color: mealColors.primary,
+    fontWeight: '600',
+    color: 'rgba(10,10,10,0.72)',
+  },
+  sourcesToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 4,
   },
   section: {
-    marginTop: 22,
-    marginBottom: 12,
-    fontSize: 16,
-    fontWeight: '800',
-    color: mealColors.text,
+    ...display,
+    marginTop: 28,
+    marginBottom: 14,
+    fontSize: 22,
   },
   loading: {
     alignItems: 'center',
@@ -399,6 +555,5 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 13,
-    color: mealColors.muted,
   },
 });

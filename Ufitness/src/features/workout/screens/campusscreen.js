@@ -12,7 +12,7 @@ export default function CampusScreen({ navigation }) {
   return (
     <GlassScreen>
       <View className="mt-2 h-1 w-[84%] rounded bg-accent" />
-      <Text className="mt-6 text-[26px] font-extrabold text-ink">Which UJ campus do you attend?</Text>
+      <Text className="mt-6 text-[26px] font-display uppercase text-ink">Which UJ campus do you attend?</Text>
       <Text className="mb-6 mt-2 leading-5 text-muted">
         Buddies are matched with students on the same campus so you can train together.
       </Text>

@@ -26,7 +26,7 @@ export default function WorkoutCard({
     <GlassCard className="border-accent/30">
       <View className="mb-3 flex-row items-center gap-3.5">
         <View className="h-16 w-16 items-center justify-center rounded-2xl bg-accent/20">
-          <Ionicons name="body" size={36} color="#BA4A0C" />
+          <Ionicons name="body" size={36} color="#FF6A00" />
         </View>
         <View className="flex-1">
           <Text className="mb-1 text-[13px] text-muted">{eyebrow}</Text>

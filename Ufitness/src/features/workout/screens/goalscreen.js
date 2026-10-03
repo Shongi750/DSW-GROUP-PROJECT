@@ -13,7 +13,7 @@ export default function GoalScreen({ navigation }) {
   return (
     <GlassScreen>
       <View className="mt-2 h-1 w-[45%] rounded bg-accent" />
-      <Text className="mt-6 text-[26px] font-extrabold text-ink">What are you training for?</Text>
+      <Text className="mt-6 text-[26px] font-display uppercase text-ink">What are you training for?</Text>
       <Text className="mb-6 mt-2 leading-5 text-muted">
         This sets your sets, reps, rest and weekly volume. Each option follows published training research, not a
         template.
@@ -27,7 +27,7 @@ export default function GoalScreen({ navigation }) {
         >
           <View className="flex-row items-center gap-3">
             <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/20">
-              <Ionicons name={item.icon} size={20} color="#BA4A0C" />
+              <Ionicons name={item.icon} size={20} color="#FF6A00" />
             </View>
             <View className="flex-1">
               <Text className="text-lg font-extrabold text-ink">{item.name}</Text>

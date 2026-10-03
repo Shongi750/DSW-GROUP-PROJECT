@@ -3,9 +3,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { logIn } from '../../services/authService';
+import { useTheme } from '../../../../context/ThemeContext';
+
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
 // Props: onNavigateToSignUp: () => void
 export default function LoginScreen({ onNavigateToSignUp, errorMessage }) {
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,7 +40,7 @@ export default function LoginScreen({ onNavigateToSignUp, errorMessage }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome back</Text>
+      <Text style={styles.title}>Welcome Back</Text>
 
       <Text style={styles.label}>Email</Text>
       <TextInput
@@ -43,12 +48,20 @@ export default function LoginScreen({ onNavigateToSignUp, errorMessage }) {
         value={email}
         onChangeText={setEmail}
         placeholder="jane@student.uj.ac.za"
+        placeholderTextColor={colors.muted}
         autoCapitalize="none"
         keyboardType="email-address"
       />
 
       <Text style={styles.label}>Password</Text>
-      <TextInput style={styles.input} value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
+      <TextInput
+        style={styles.input}
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Password"
+        placeholderTextColor={colors.muted}
+        secureTextEntry
+      />
 
       <Pressable style={styles.button} onPress={handleLogIn} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
@@ -61,27 +74,30 @@ export default function LoginScreen({ onNavigateToSignUp, errorMessage }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, justifyContent: 'center', backgroundColor: '#F7F7F8' },
-  title: { fontSize: 26, fontWeight: '700', color: '#1a1a1a', marginBottom: 24, textAlign: 'center' },
-  label: { fontSize: 13, fontWeight: '600', color: '#555', marginTop: 12, marginBottom: 8 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  button: {
-    backgroundColor: '#FF6B35',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 28,
-  },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  linkRow: { marginTop: 16, alignItems: 'center' },
-  linkText: { color: '#FF6B35', fontWeight: '600', fontSize: 13 },
-});
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    container: { flex: 1, padding: 20, justifyContent: 'center', backgroundColor: colors.background },
+    title: { ...display, fontSize: 28, color: colors.text, marginBottom: 24, textAlign: 'center', textTransform: 'uppercase' },
+    label: { fontSize: 13, fontWeight: '600', color: colors.muted, marginTop: 12, marginBottom: 8 },
+    input: {
+      backgroundColor: colors.input,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.text,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    button: {
+      backgroundColor: colors.brand,
+      borderRadius: 999,
+      paddingVertical: 15,
+      alignItems: 'center',
+      marginTop: 28,
+    },
+    buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+    linkRow: { marginTop: 16, alignItems: 'center' },
+    linkText: { color: colors.brand, fontWeight: '600', fontSize: 13 },
+  });
+}

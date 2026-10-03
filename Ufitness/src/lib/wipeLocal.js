@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { disableUnlock } from './biometrics';
 
 const KEYS = [
   'ufitness.session.v1',
@@ -8,6 +9,7 @@ const KEYS = [
   'ufitness.theme.v1',
   'ufitness.reminders.v1',
   'ufitness.pendingSignup.v1',
+  'ufitness.auth.rememberEmail.v1',
   'ufitness.workout.dailyClips.v1',
   'ufitness.workout.savedClips.v1',
   'ufitness.workout.pending.v1',
@@ -19,4 +21,5 @@ const KEYS = [
 
 export async function wipeLocalUfitnessData() {
   await AsyncStorage.multiRemove(KEYS);
+  await disableUnlock();
 }

@@ -24,28 +24,64 @@ export default function HomeScreen() {
   const completedKeys = useMemo(() => daysWithSessions(profile.history), [profile.history]);
   const [selectedKey, setSelectedKey] = useState(week.find((item) => item.isToday)?.key);
 
+  const openPreStart = useCallback(
+    (params) => {
+      navigation.navigate('PreStart', params);
+    },
+    [navigation],
+  );
+
   const startWorkout = useCallback(() => {
     if (todayPlan.type !== 'train' || !todayPlan.moves.length) return;
-    navigation.navigate('Player', {
+    openPreStart({
+      title: program ? program.goal.name : plan.name,
+      minutes: estimateMinutes(todayPlan.moves) || plan.minutes || 30,
+      level: plan.equipment || 'Train',
+      focus: program?.splitName || 'Today',
+      moves: todayPlan.moves.length,
+      movesList: todayPlan.moves,
       exerciseIds: todayPlan.moves.map((move) => move.id),
-      moves: todayPlan.moves,
-      startIndex: 0,
       programId: program?.id || FLOOR_PLAN.id,
       sessionId: todayPlan.session?.id,
     });
-  }, [navigation, todayPlan, program]);
+  }, [todayPlan, program, plan, openPreStart]);
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       takeWorkoutAction().then((pending) => {
-        if (!alive || pending?.startToday !== true) return;
-        startWorkout();
+        if (!alive || !pending) return;
+        if (pending.openInsights === true) {
+          navigation.navigate('Insights');
+          return;
+        }
+        if (pending.startToday === true) {
+          startWorkout();
+          return;
+        }
+        if (pending.preStart && pending.exerciseIds?.length) {
+          openPreStart(pending);
+          return;
+        }
+        if (pending.exerciseIds?.length) {
+          openPreStart({
+            title: pending.title || 'Workout',
+            minutes: pending.minutes || 15,
+            level: pending.level || 'Train',
+            focus: pending.focus || 'Full body',
+            moves: pending.moves || pending.exerciseIds.length,
+            exerciseIds: pending.exerciseIds,
+            programId: pending.programId,
+            workoutId: pending.workoutId || pending.programId,
+            group: pending.group,
+            image: pending.image,
+          });
+        }
       });
       return () => {
         alive = false;
       };
-    }, [startWorkout]),
+    }, [navigation, startWorkout, openPreStart]),
   );
 
   return (
@@ -124,8 +160,13 @@ export default function HomeScreen() {
               title={workout.name}
               progressLabel={`${workout.exerciseIds.length} moves`}
               onPress={() =>
-                navigation.navigate('Player', {
-                  moves: movesFromIds(workout.exerciseIds, getExercise),
+                openPreStart({
+                  title: workout.name,
+                  minutes: Math.max(10, workout.exerciseIds.length * 2),
+                  level: 'Custom',
+                  focus: 'My workouts',
+                  moves: workout.exerciseIds.length,
+                  movesList: movesFromIds(workout.exerciseIds, getExercise),
                   exerciseIds: workout.exerciseIds,
                   programId: workout.id,
                 })

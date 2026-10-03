@@ -1,12 +1,10 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { isFirebaseConfigured } from './lib/firebase';
 import { AppProvider, useApp } from './context/AppContext';
-import AuthScreen from './screens/authscreen';
 import HomeScreen from './screens/homescreen';
 import WorkoutScreen from './screens/workoutscreen';
 import CoachingScreen from './screens/coachingscreen';
@@ -26,6 +24,8 @@ import DaysScreen from './screens/daysscreen';
 import LimitsScreen from './screens/limitsscreen';
 import DisclaimerScreen from './screens/disclaimerscreen';
 import PlayerScreen from './screens/playerscreen';
+import PreStartScreen from './screens/prestartscreen';
+import FinishScreen from './screens/finishscreen';
 import CampusScreen from './screens/campusscreen';
 import { colors } from './constants/theme';
 import { useTheme } from '../../context/ThemeContext';
@@ -45,7 +45,7 @@ const icons = {
 
 function OnboardingNavigator() {
   return (
-    <OnboardingStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+    <OnboardingStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
       <OnboardingStack.Screen name="Gender" component={GenderScreen} />
       <OnboardingStack.Screen name="Weight" component={WeightScreen} />
       <OnboardingStack.Screen name="Goal" component={GoalScreen} />
@@ -110,11 +110,13 @@ function WorkoutTabs() {
 
 function MainNavigator() {
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+    <RootStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
       <RootStack.Screen name="Main" component={WorkoutTabs} />
+      <RootStack.Screen name="PreStart" component={PreStartScreen} options={{ presentation: 'modal' }} />
       <RootStack.Screen name="Player" component={PlayerScreen} options={{ presentation: 'fullScreenModal' }} />
+      <RootStack.Screen name="Finish" component={FinishScreen} options={{ presentation: 'fullScreenModal' }} />
       <RootStack.Screen name="Music" component={MusicScreen} options={{ presentation: 'modal' }} />
-      <RootStack.Screen name="Auth" component={AuthScreen} options={{ presentation: 'modal' }} />
+      <RootStack.Screen name="Auth" component={SignedInNote} options={{ presentation: 'modal' }} />
     </RootStack.Navigator>
   );
 }
@@ -127,24 +129,28 @@ function Spinner() {
   );
 }
 
+function SignedInNote() {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <Text style={{ fontSize: 16, textAlign: 'center' }}>
+        Workout uses the same UFitness account. Sign in once from the main screen.
+      </Text>
+    </View>
+  );
+}
+
 function WorkoutRoot({ onLeave }) {
   const { ready, profile } = useApp();
-  const { authReady, user, guest, continueAsGuest } = useAuth();
-
-  useEffect(() => {
-    if (authReady && !user && !guest && !isFirebaseConfigured) {
-      continueAsGuest();
-    }
-  }, [authReady, user, guest, continueAsGuest]);
+  const { authReady, user } = useAuth();
 
   if (!ready || !authReady) {
     return <Spinner />;
   }
 
-  const body = !user && !guest
+  const body = !user
     ? (
       <WorkoutPageChrome>
-        {isFirebaseConfigured ? <AuthScreen /> : <Spinner />}
+        <SignedInNote />
       </WorkoutPageChrome>
     )
     : profile.onboarded && profile.acceptedDisclaimer
@@ -152,7 +158,7 @@ function WorkoutRoot({ onLeave }) {
       : (
         <WorkoutPageChrome>
           {profile.onboarded ? (
-            <RootStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+            <RootStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
               <RootStack.Screen name="Disclaimer" component={DisclaimerScreen} />
             </RootStack.Navigator>
           ) : (
@@ -167,7 +173,7 @@ function WorkoutRoot({ onLeave }) {
 export default function WorkoutModule({ onLeave }) {
   const { colors: theme } = useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <AuthProvider>
         <AppProvider>
           <WorkoutRoot onLeave={onLeave} />

@@ -4,27 +4,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import BuddyCard from '../components/BuddyCard';
-import { getIncomingRequests, getStudentById, respondToBuddyRequest } from '../services/buddyService';
+import { getIncomingRequests, respondToBuddyRequest } from '../services/buddyService';
 import { useTheme } from '../../../context/ThemeContext';
+
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
 // Props:
 // currentStudent: student profile object
 // onBuddyMatched?: () => void — notify parent so matched buddies list can refresh
 export default function BuddyRequestsScreen({ currentStudent, onBuddyMatched }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
     const requests = await getIncomingRequests(currentStudent.id);
-    const withSenders = requests
-      .map((request) => {
-        const sender = getStudentById(request.fromStudentId);
-        return sender ? { request, sender } : null;
-      })
-      .filter((item) => item !== null);
-    setItems(withSenders);
+    setItems(requests.map((request) => ({ request, sender: request.sender })).filter((item) => item.sender));
     setLoading(false);
   }, [currentStudent.id]);
 
@@ -40,14 +37,14 @@ export default function BuddyRequestsScreen({ currentStudent, onBuddyMatched }) 
 
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#FF6B35" />
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container}>
       <Text style={styles.title}>Buddy Requests</Text>
 
       <FlatList
@@ -69,9 +66,11 @@ export default function BuddyRequestsScreen({ currentStudent, onBuddyMatched }) 
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F7F8', padding: 16 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 16 },
-  emptyText: { textAlign: 'center', color: '#888', marginTop: 40 },
-});
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background, padding: 16 },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+    title: { ...display, fontSize: 24, color: colors.text, marginBottom: 16, textTransform: 'uppercase' },
+    emptyText: { textAlign: 'center', color: colors.muted, marginTop: 40 },
+  });
+}

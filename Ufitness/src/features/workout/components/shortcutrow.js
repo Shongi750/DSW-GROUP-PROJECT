@@ -17,7 +17,7 @@ export default function ShortcutRow({ items, onPress, activeId }) {
           >
             <GlassPanel className={`h-[52px] w-[52px] rounded-full ${active ? 'border-accent' : ''}`}>
               <View className="h-full items-center justify-center">
-                <Ionicons name={item.icon} size={22} color="#1A1A1A" />
+                <Ionicons name={item.icon} size={22} color="#FFFFFF" />
               </View>
             </GlassPanel>
             <Text className={`text-[13px] font-semibold ${active ? 'text-accent' : 'text-ink'}`}>

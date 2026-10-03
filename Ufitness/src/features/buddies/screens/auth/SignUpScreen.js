@@ -17,6 +17,9 @@ import {
 } from 'react-native';
 import ChipSelector from '../../components/ChipSelector';
 import { signUp } from '../../services/authService';
+import { useTheme } from '../../../../context/ThemeContext';
+
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
 const CAMPUSES = ['APK', 'APB', 'DFC', 'SW'];
 const GOALS = ['Weight management', 'Muscle/strength development', 'General fitness', 'Improve endurance'];
@@ -26,6 +29,8 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Props: onNavigateToLogin: () => void
 export default function SignUpScreen({ onNavigateToLogin }) {
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -67,10 +72,16 @@ export default function SignUpScreen({ onNavigateToLogin }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Create your account</Text>
+      <Text style={styles.title}>Create Your Account</Text>
 
       <Text style={styles.label}>Name</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Jane Doe" />
+      <TextInput
+        style={styles.input}
+        value={name}
+        onChangeText={setName}
+        placeholder="Jane Doe"
+        placeholderTextColor={colors.muted}
+      />
 
       <Text style={styles.label}>Email</Text>
       <TextInput
@@ -78,6 +89,7 @@ export default function SignUpScreen({ onNavigateToLogin }) {
         value={email}
         onChangeText={setEmail}
         placeholder="jane@student.uj.ac.za"
+        placeholderTextColor={colors.muted}
         autoCapitalize="none"
         keyboardType="email-address"
       />
@@ -88,6 +100,7 @@ export default function SignUpScreen({ onNavigateToLogin }) {
         value={password}
         onChangeText={setPassword}
         placeholder="At least 6 characters"
+        placeholderTextColor={colors.muted}
         secureTextEntry
       />
 
@@ -117,27 +130,30 @@ export default function SignUpScreen({ onNavigateToLogin }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40, backgroundColor: '#F7F7F8' },
-  title: { fontSize: 24, fontWeight: '700', color: '#1a1a1a', marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: '600', color: '#555', marginTop: 16, marginBottom: 8 },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  button: {
-    backgroundColor: '#FF6B35',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 28,
-  },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  linkRow: { marginTop: 16, alignItems: 'center' },
-  linkText: { color: '#FF6B35', fontWeight: '600', fontSize: 13 },
-});
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    container: { padding: 20, paddingBottom: 40, backgroundColor: colors.background },
+    title: { ...display, fontSize: 26, color: colors.text, marginBottom: 20, textTransform: 'uppercase' },
+    label: { fontSize: 13, fontWeight: '600', color: colors.muted, marginTop: 16, marginBottom: 8 },
+    input: {
+      backgroundColor: colors.input,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.text,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    button: {
+      backgroundColor: colors.brand,
+      borderRadius: 999,
+      paddingVertical: 15,
+      alignItems: 'center',
+      marginTop: 28,
+    },
+    buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+    linkRow: { marginTop: 16, alignItems: 'center' },
+    linkText: { color: colors.brand, fontWeight: '600', fontSize: 13 },
+  });
+}

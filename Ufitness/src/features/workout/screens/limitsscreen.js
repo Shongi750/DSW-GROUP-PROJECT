@@ -16,7 +16,7 @@ export default function LimitsScreen({ navigation }) {
   return (
     <GlassScreen scroll={false} contentClassName="flex-1">
       <View className="mt-2 h-1 w-[90%] rounded bg-accent" />
-      <Text className="mt-6 text-[26px] font-extrabold text-ink">Anything we should swap?</Text>
+      <Text className="mt-6 text-[26px] font-display uppercase text-ink">Anything we should swap?</Text>
       <Text className="mb-6 mt-2 leading-5 text-muted">
         If knees bother you, squats become wall sits and jumping jacks become marching. This is not medical advice.
       </Text>

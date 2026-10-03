@@ -11,7 +11,7 @@ import { estimateMinutes, formatMoveMeta } from '../lib/session';
 import TrainDaysPicker from '../components/traindayspicker';
 import { DAY_NAMES, resolveTrainWeekdays } from '../lib/trainDays';
 
-const STATUS_COLOR = { low: '#FFB020', ok: '#BA4A0C', high: '#FF4D4F' };
+const STATUS_COLOR = { low: '#FFB020', ok: '#FF6A00', high: '#FF4D4F' };
 
 function VolumeRow({ entry }) {
   const width = Math.min(100, (entry.direct / VOLUME_LANDMARKS.max) * 100);
@@ -40,7 +40,7 @@ export default function PlanScreen({ navigation }) {
   if (!profile.goal) {
     return (
       <GlassScreen>
-        <Text className="text-[28px] font-extrabold text-ink">Choose a training goal</Text>
+        <Text className="text-[28px] font-display uppercase text-ink">Choose a training goal</Text>
         <Text className="mb-5 mt-2 leading-5 text-muted">
           Pick what you are training for and we will build a plan around it: the split, weekly sets per muscle, rep
           ranges, rests and a planned deload.
@@ -49,7 +49,7 @@ export default function PlanScreen({ navigation }) {
           <GlassCard key={goal.id} className="mb-3" onPress={() => updateProfile({ goal: goal.id })}>
             <View className="flex-row items-center gap-3">
               <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/20">
-                <Ionicons name={goal.icon} size={20} color="#BA4A0C" />
+                <Ionicons name={goal.icon} size={20} color="#FF6A00" />
               </View>
               <View className="flex-1">
                 <Text className="text-lg font-extrabold text-ink">{goal.name}</Text>
@@ -83,7 +83,7 @@ export default function PlanScreen({ navigation }) {
 
   return (
     <GlassScreen>
-      <Text className="text-[28px] font-extrabold text-ink">{goal.name}</Text>
+      <Text className="text-[28px] font-display uppercase text-ink">{goal.name}</Text>
       <Text className="mt-2 leading-5 text-muted">
         {program.splitName} · {tier?.name} · week {weekIndex + 1} of {program.weeks} ({weekLabel(weekIndex)})
       </Text>
@@ -164,7 +164,7 @@ export default function PlanScreen({ navigation }) {
         </Text>
         {showWhy
           ? goalReferences(goal).map((reference) => (
-              <View key={reference.key} className="mt-3 border-t border-black/10 pt-3">
+              <View key={reference.key} className="mt-3 border-t border-white/10 pt-3">
                 <Text className="text-[13px] font-semibold text-ink">{reference.label}</Text>
                 <Text className="mt-1 text-[13px] leading-5 text-muted">{reference.takeaway}</Text>
               </View>
@@ -179,7 +179,7 @@ export default function PlanScreen({ navigation }) {
             key={item.id}
             onPress={() => updateProfile({ goal: item.id })}
             className={`rounded-full border px-4 py-2.5 ${
-              item.id === goal.id ? 'border-accent bg-accent/15' : 'border-black/10 bg-surface'
+              item.id === goal.id ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface'
             }`}
           >
             <Text className={`text-[13px] font-semibold ${item.id === goal.id ? 'text-ink' : 'text-muted'}`}>
@@ -194,7 +194,7 @@ export default function PlanScreen({ navigation }) {
             key={item.id}
             onPress={() => updateProfile({ equipmentTier: item.id })}
             className={`rounded-full border px-4 py-2.5 ${
-              item.id === program.tier ? 'border-accent bg-accent/15' : 'border-black/10 bg-surface'
+              item.id === program.tier ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface'
             }`}
           >
             <Text className={`text-[13px] font-semibold ${item.id === program.tier ? 'text-ink' : 'text-muted'}`}>
@@ -209,7 +209,7 @@ export default function PlanScreen({ navigation }) {
             key={days}
             onPress={() => updateProfile({ daysPerWeek: days })}
             className={`rounded-full border px-4 py-2.5 ${
-              days === program.daysPerWeek ? 'border-accent bg-accent/15' : 'border-black/10 bg-surface'
+              days === program.daysPerWeek ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface'
             }`}
           >
             <Text

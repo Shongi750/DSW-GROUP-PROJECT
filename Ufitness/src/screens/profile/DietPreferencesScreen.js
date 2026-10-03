@@ -8,6 +8,8 @@ import DietFilter from '../../features/meals/components/DietFilter';
 import { mergeDietFilters } from '../../features/meals/lib/diet';
 import { loadSavedPlan, saveSavedPlan } from '../../features/meals/lib/persist';
 
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
+
 export default function DietPreferencesScreen({ navigation }) {
   const { colors } = useTheme();
   const { profile, updateFields } = useApp();
@@ -35,7 +37,7 @@ export default function DietPreferencesScreen({ navigation }) {
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={[styles.subtitle, { color: colors.muted }]}>
-          These filters apply to the Meals week. Meals stays on budget and portions; diet lives here.
+          Tap common filters, or type any other allergy. The Meals week skips matching ingredients.
         </Text>
         <DietFilter value={value} onChange={onChange} />
       </ScrollView>
@@ -44,7 +46,7 @@ export default function DietPreferencesScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
+  screen: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -53,7 +55,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700' },
+  title: { ...display, flex: 1, textAlign: 'center', fontSize: 18, textTransform: 'uppercase' },
   content: { padding: 16, paddingBottom: 40 },
   subtitle: { fontSize: 14, lineHeight: 20, marginBottom: 4 },
 });

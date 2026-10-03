@@ -16,7 +16,7 @@ export default function HowToScreen({ navigation, route }) {
     <GlassScreen>
       <View className="mb-2 flex-row items-center justify-between">
         <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-          <Ionicons name="chevron-back" size={22} color="#1A1A1A" />
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="font-extrabold tracking-wide text-ink">{exercise.name.toUpperCase()}</Text>
         <View className="w-9" />

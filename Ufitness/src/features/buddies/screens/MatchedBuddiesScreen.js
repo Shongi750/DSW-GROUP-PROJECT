@@ -6,11 +6,14 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, TouchableOp
 import { getMatchedBuddies, unfriendBuddy } from '../services/buddyService';
 import { useTheme } from '../../../context/ThemeContext';
 
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
+
 // Props:
 // currentStudent: student profile object
 // refreshKey?: number — bump this from a parent to force a reload after a new match
-export default function MatchedBuddiesScreen({ currentStudent, refreshKey }) {
-  const { colors } = useTheme();
+export default function MatchedBuddiesScreen({ currentStudent, refreshKey, onMessage }) {
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, isDark);
   const [buddies, setBuddies] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,15 +30,15 @@ export default function MatchedBuddiesScreen({ currentStudent, refreshKey }) {
 
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#FF6B35" />
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>My Workout Buddies</Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>My Workout Buddies</Text>
 
       <FlatList
         data={buddies}
@@ -49,31 +52,42 @@ export default function MatchedBuddiesScreen({ currentStudent, refreshKey }) {
         renderItem={({ item }) => (
           <View style={styles.infoCard}>
             <Text style={styles.name}>{item.name}</Text>
-            <InfoRow label="Campus" value={item.campus} />
-            <InfoRow label="Goal" value={item.fitnessGoal} />
-            <InfoRow label="Experience" value={item.experienceLevel} />
-            <InfoRow label="Preferred location" value={item.workoutLocation} />
-            <InfoRow label="Usual training days" value={(item.preferredSchedule || []).join(', ')} />
-            {item.requestId ? (
-              <TouchableOpacity
-                style={styles.unfriendBtn}
-                onPress={() => {
-                  Alert.alert('Unfriend', `Remove ${item.name} from your workout buddies?`, [
-                    { text: 'Keep', style: 'cancel' },
-                    {
-                      text: 'Unfriend',
-                      style: 'destructive',
-                      onPress: async () => {
-                        await unfriendBuddy(item.requestId);
-                        loadBuddies();
+            <InfoRow label="Campus" value={item.campus} styles={styles} />
+            <InfoRow label="Goal" value={item.fitnessGoal} styles={styles} />
+            <InfoRow label="Experience" value={item.experienceLevel} styles={styles} />
+            <InfoRow label="Preferred location" value={item.workoutLocation} styles={styles} />
+            <InfoRow
+              label="Usual training days"
+              value={(item.preferredSchedule || []).join(', ')}
+              styles={styles}
+            />
+            <View style={styles.actionRow}>
+              {onMessage ? (
+                <TouchableOpacity style={styles.chatBtn} onPress={() => onMessage(item)}>
+                  <Text style={styles.chatText}>Chat</Text>
+                </TouchableOpacity>
+              ) : null}
+              {item.requestId ? (
+                <TouchableOpacity
+                  style={styles.unfriendBtn}
+                  onPress={() => {
+                    Alert.alert('Unfriend', `Remove ${item.name} from your workout buddies?`, [
+                      { text: 'Keep', style: 'cancel' },
+                      {
+                        text: 'Unfriend',
+                        style: 'destructive',
+                        onPress: async () => {
+                          await unfriendBuddy(item.requestId);
+                          loadBuddies();
+                        },
                       },
-                    },
-                  ]);
-                }}
-              >
-                <Text style={styles.unfriendText}>Unfriend</Text>
-              </TouchableOpacity>
-            ) : null}
+                    ]);
+                  }}
+                >
+                  <Text style={styles.unfriendText}>Unfriend</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
         )}
       />
@@ -81,7 +95,7 @@ export default function MatchedBuddiesScreen({ currentStudent, refreshKey }) {
   );
 }
 
-function InfoRow({ label, value }) {
+function InfoRow({ label, value, styles }) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -90,29 +104,47 @@ function InfoRow({ label, value }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F7F8', padding: 16 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginBottom: 16 },
-  emptyText: { textAlign: 'center', color: '#888', marginTop: 40 },
-  infoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-  },
-  name: { fontSize: 17, fontWeight: '700', marginBottom: 8, color: '#1a1a1a' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  infoLabel: { color: '#8a8a8a', fontSize: 13 },
-  infoValue: { color: '#2a2a2a', fontSize: 13, fontWeight: '600' },
-  unfriendBtn: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#B42318',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  unfriendText: { color: '#B42318', fontSize: 13, fontWeight: '700' },
-});
+function createStyles(colors, isDark) {
+  const danger = isDark ? '#F87171' : '#B42318';
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background, padding: 16 },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+    title: { ...display, fontSize: 24, color: colors.text, marginBottom: 16, textTransform: 'uppercase' },
+    emptyText: { textAlign: 'center', color: colors.muted, marginTop: 40 },
+    infoCard: {
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: isDark ? 1 : 0,
+      borderColor: colors.border,
+    },
+    name: { fontSize: 17, fontWeight: '700', marginBottom: 8, color: colors.text },
+    infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+    infoLabel: { color: colors.muted, fontSize: 13 },
+    infoValue: { color: colors.text, fontSize: 13, fontWeight: '600' },
+    actionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginTop: 12,
+    },
+    chatBtn: {
+      borderWidth: 1,
+      borderColor: colors.brand,
+      borderRadius: 999,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: colors.brand,
+    },
+    chatText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+    unfriendBtn: {
+      borderWidth: 1,
+      borderColor: danger,
+      borderRadius: 999,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+    },
+    unfriendText: { color: danger, fontSize: 13, fontWeight: '700' },
+  });
+}

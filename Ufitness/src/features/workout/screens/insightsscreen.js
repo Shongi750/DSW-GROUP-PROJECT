@@ -1,14 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { getProgram } from '../data/programs';
 import { sessionStreak, weekActivity, muscleBreakdown, personalRecords, weekVolume } from '../data/progress';
+import { planAdaptationMessage } from '../data/planAdaptation';
 import WeekStrip from '../components/weekstrip';
 import { daysWithSessions } from '../data/week';
 import { GlassCard, GlassScreen } from '../components/glass';
 import SectionTitle from '../components/sectiontitle';
 import PrimaryButton from '../components/button';
+import BadgeStrip from '../../../components/BadgeStrip';
+import { syncAchievements } from '../../../lib/achievements';
 
 function BarChart({ days }) {
   const max = Math.max(1, ...days.map((item) => item.minutes || item.sessions));
@@ -20,7 +23,7 @@ function BarChart({ days }) {
         return (
           <View key={item.key} className="h-full flex-1 items-center justify-end">
             <View
-              className={`w-[70%] min-h-[8px] rounded-md ${value > 0 ? 'bg-accent' : 'bg-black/10'}`}
+              className={`w-[70%] min-h-[8px] rounded-md ${value > 0 ? 'bg-accent' : 'bg-white/10'}`}
               style={{ height }}
             />
             <Text className="mt-1.5 text-[11px] text-muted">{item.weekday}</Text>
@@ -43,16 +46,32 @@ export default function InsightsScreen({ navigation }) {
   const records = personalRecords(history);
   const volume = weekVolume(history.filter((item) => weekDays.some((day) => day.key === item.date)));
   const completedKeys = daysWithSessions(history);
+  const adaptation = useMemo(() => planAdaptationMessage(history), [history]);
+  const [badges, setBadges] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    syncAchievements({ history, weekDone, weekTotal }).then((result) => {
+      if (alive) setBadges(result.badges);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [history, weekDone, weekTotal]);
 
   const startToday = () => {
     if (todayPlan.type !== 'train') {
       navigation.navigate('Home');
       return;
     }
-    navigation.navigate('Player', {
+    navigation.navigate('PreStart', {
+      title: todayPlan.session?.name || "Today's session",
+      minutes: todayPlan.moves.length * 2 || 30,
+      level: 'Train',
+      focus: 'Today',
+      moves: todayPlan.moves.length,
+      movesList: todayPlan.moves,
       exerciseIds: todayPlan.moves.map((move) => move.id),
-      moves: todayPlan.moves,
-      startIndex: 0,
       programId: 'floor-25',
       sessionId: todayPlan.session?.id,
     });
@@ -60,13 +79,24 @@ export default function InsightsScreen({ navigation }) {
 
   return (
     <GlassScreen>
-      <Text className="text-[28px] font-extrabold text-ink">Your progress</Text>
+      <Text className="text-[11px] font-extrabold tracking-widest text-accent">ACTIVITY</Text>
+      <Text className="mt-1 text-[28px] font-display uppercase text-ink">Your week</Text>
       <Text className="mb-5 mt-1.5 leading-5 text-muted">{statusSentence}</Text>
+
+      {adaptation ? (
+        <GlassCard className="mb-3">
+          <Text className="text-[11px] font-extrabold tracking-widest text-accent">{adaptation.kicker.toUpperCase()}</Text>
+          <Text className="mt-1 text-lg font-bold text-ink">{adaptation.title}</Text>
+          <Text className="mt-1 text-[13px] leading-5 text-muted">{adaptation.body}</Text>
+        </GlassCard>
+      ) : null}
+
+      <BadgeStrip badges={badges} />
 
       <GlassCard>
         <View className="flex-row items-center gap-4">
           <View className="h-[88px] w-[88px] items-center justify-center rounded-full border-8 border-accent">
-            <Text className="text-[22px] font-extrabold text-ink">{weekPercent}%</Text>
+            <Text className="text-[22px] font-display uppercase text-ink">{weekPercent}%</Text>
           </View>
           <View className="flex-1">
             <Text className="text-lg font-bold text-ink">Are you on track?</Text>
@@ -87,7 +117,7 @@ export default function InsightsScreen({ navigation }) {
         ].map(([icon, value, label]) => (
           <GlassCard key={label} className="flex-1">
             <View className="items-center gap-1">
-              <Ionicons name={icon} size={18} color="#BA4A0C" />
+              <Ionicons name={icon} size={18} color="#FF6A00" />
               <Text className="text-xl font-extrabold text-ink">{value}</Text>
               <Text className="text-center text-[11px] text-muted">{label}</Text>
             </View>
@@ -127,7 +157,7 @@ export default function InsightsScreen({ navigation }) {
           muscles.map((item) => (
             <View key={item.label} className="mb-2.5 flex-row items-center gap-2">
               <Text className="w-[78px] text-[13px] font-semibold text-ink">{item.label}</Text>
-              <View className="h-2 flex-1 overflow-hidden rounded bg-black/10">
+              <View className="h-2 flex-1 overflow-hidden rounded bg-white/10">
                 <View className="h-full rounded bg-accent" style={{ width: `${Math.round(item.ratio * 100)}%` }} />
               </View>
               <Text className="w-5 text-right text-xs text-muted">{item.count}</Text>
@@ -148,7 +178,7 @@ export default function InsightsScreen({ navigation }) {
             <GlassCard key={item.id} className="mb-2">
               <View className="flex-row items-center gap-3">
                 <View className="h-9 w-9 items-center justify-center rounded-[10px] bg-accent/20">
-                  <Ionicons name="barbell" size={16} color="#BA4A0C" />
+                  <Ionicons name="barbell" size={16} color="#FF6A00" />
                 </View>
                 <View className="flex-1">
                   <Text className="font-bold text-ink">{program?.name || 'Custom session'}</Text>

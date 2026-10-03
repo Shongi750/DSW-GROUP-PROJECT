@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-export default function BarChart({ title, series = [], color = '#E8722C', track, labelColor }) {
+export default function BarChart({ title, series = [], color = '#FF6A00', track, labelColor }) {
   const max = Math.max(...series.map((item) => Number(item.value) || 0), 1);
   return (
     <View style={styles.wrap}>
@@ -26,7 +26,13 @@ export default function BarChart({ title, series = [], color = '#E8722C', track,
 
 const styles = StyleSheet.create({
   wrap: { marginTop: 8 },
-  title: { fontSize: 14, fontWeight: '800', marginBottom: 10 },
+  title: {
+    fontFamily: 'Anton_400Regular',
+    letterSpacing: 0.8,
+    fontSize: 15,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   label: { width: 78, fontSize: 12, fontWeight: '600' },
   track: { flex: 1, height: 10, borderRadius: 999, overflow: 'hidden' },

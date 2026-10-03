@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius } from '../constants/theme';
+import { colors, radius, display } from '../constants/theme';
 import { useTheme } from '../../../context/ThemeContext';
 import { CADENCES } from '../data/groceryExtras';
 import { formatRand } from '../data/planner';
@@ -255,11 +255,9 @@ export default function GroceryList({
             <Text style={[styles.title, { color: theme.text }]}>Grocery list</Text>
             <Text style={[styles.subtitle, { color: theme.muted }]}>Pick a store and how often you shop. Search SA shelves if an item is missing.</Text>
             <Text style={styles.sourceNote}>
-              {hasLoyaltyHubKey()
-                ? priceSource === 'loyaltyhub'
-                  ? 'Live shelf prices from LoyaltyHub · Shoprite, Checkers, Pick n Pay, Woolworths, Clicks, Makro.'
-                  : loyaltyError || 'LoyaltyHub key is set, but a live quote was not returned yet. Open Prices is filling gaps.'
-                : 'Add EXPO_PUBLIC_LOYALTYHUB_KEY in Meals/.env for Shoprite and Checkers shelf prices. Until then, products come from Open Food Facts and prices stay estimated unless Open Prices has a receipt.'}
+              {hasLoyaltyHubKey() && priceSource === 'loyaltyhub'
+                ? 'Live shelf prices · Shoprite, Checkers, Pick n Pay and more.'
+                : 'SA staples with estimated prices. Live shelf quotes when available.'}
             </Text>
 
             <View style={styles.chips}>
@@ -342,11 +340,9 @@ export default function GroceryList({
               ))
             ) : (
               <Text style={styles.muted}>
-                  {hasLoyaltyHubKey()
-                  ? storeId !== 'cheapest'
+                  {storeId !== 'cheapest'
                     ? `No ${shopLabel} specials on this week’s staples yet. Search a product or try Cheapest mix.`
-                    : 'No specials on this week’s staples yet. Search a product to compare Shoprite, Checkers and Pick n Pay.'
-                  : 'No live specials yet. Add EXPO_PUBLIC_LOYALTYHUB_KEY in Meals/.env for Shoprite and Checkers shelf prices.'}
+                    : 'No specials on this week’s staples yet. Search a product to compare stores.'}
               </Text>
             )}
 
@@ -470,15 +466,15 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     borderRadius: radius.card,
     padding: 16,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     gap: 8,
   },
   cardCopy: {
     flex: 1,
   },
   cardTitle: {
+    ...display,
     fontSize: 18,
-    fontWeight: '800',
     color: colors.text,
   },
   cardSub: {
@@ -492,7 +488,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: colors.white,
+    backgroundColor: colors.background,
   },
   scroll: {
     flex: 1,
@@ -516,10 +512,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   title: {
+    ...display,
     fontSize: 28,
-    fontWeight: '800',
     color: colors.text,
-    letterSpacing: -0.5,
   },
   subtitle: {
     marginTop: 4,
@@ -619,10 +614,10 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   heading: {
+    ...display,
     marginTop: 22,
     marginBottom: 10,
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 17,
     color: colors.text,
   },
   muted: {
@@ -736,13 +731,13 @@ const styles = StyleSheet.create({
   },
   sheet: {
     width: '100%',
-    backgroundColor: colors.white,
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: 6,
     padding: 20,
   },
   sheetTitle: {
+    ...display,
     fontSize: 18,
-    fontWeight: '800',
     color: colors.text,
     marginBottom: 12,
   },
@@ -754,6 +749,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: colors.text,
+    backgroundColor: colors.prepBg,
     marginBottom: 10,
   },
 });

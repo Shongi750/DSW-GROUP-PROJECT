@@ -15,7 +15,7 @@ export default function DaysScreen({ navigation }) {
   return (
     <GlassScreen>
       <View className="mt-2 h-1 w-[78%] rounded bg-accent" />
-      <Text className="mt-6 text-[26px] font-extrabold text-ink">Which days can you train?</Text>
+      <Text className="mt-6 text-[26px] font-display uppercase text-ink">Which days can you train?</Text>
       <Text className="mb-6 mt-2 leading-5 text-muted">
         Tap the weekdays that fit your timetable. Miss one and the next free day becomes that session, not a double.
       </Text>

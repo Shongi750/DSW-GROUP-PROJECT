@@ -1,186 +1,117 @@
-// services/buddyService.js
-//
-// Firestore-backed service layer for the Workout Buddy System.
-//
-// Firestore collections used:
-//   students       - doc id = studentId (== Firebase Auth uid)
-//                     { name, campus, fitnessGoal, experienceLevel,
-//                       preferredSchedule: string[], workoutLocation }
-//   buddyRequests  - auto id
-//                     { fromStudentId, toStudentId, status: 'pending'|'accepted'|'rejected',
-//                       createdAt: serverTimestamp }
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
+import { currentUid } from '../../../lib/cloudCache';
+import { listStudents } from '../../../lib/students';
 
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
-  serverTimestamp,
-  onSnapshot,
-} from 'firebase/firestore';
-import { getDb } from '../../../lib/firebase';
-
-function studentsRef() {
-  return collection(getDb(), 'students');
-}
-
-function requestsRef() {
-  return collection(getDb(), 'buddyRequests');
-}
-
-function missingFirebase() {
-  return !getDb();
+function score(me, other) {
+  const reasons = [];
+  let scoreValue = 40;
+  if (me?.campus && other.campus && me.campus === other.campus) {
+    scoreValue += 30;
+    reasons.push(`Same campus (${other.campus})`);
+  }
+  if (me?.fitnessGoal && other.fitnessGoal && me.fitnessGoal === other.fitnessGoal) {
+    scoreValue += 20;
+    reasons.push(`Same goal (${other.fitnessGoal})`);
+  }
+  if (me?.workoutLocation && other.workoutLocation && me.workoutLocation === other.workoutLocation) {
+    scoreValue += 10;
+    reasons.push(other.workoutLocation);
+  }
+  if (!reasons.length) reasons.push('Another UJ student on UFitness');
+  return { matchScore: Math.min(99, scoreValue), matchReasons: reasons };
 }
 
 export async function findPotentialBuddies(currentStudent) {
-  if (missingFirebase()) return [];
-  const snapshot = await getDocs(studentsRef());
-
-  const matches = snapshot.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((s) => s.id !== currentStudent.id)
-    .map((candidate) => {
-      let score = 0;
-      const reasons = [];
-
-      if (candidate.campus === currentStudent.campus) {
-        score += 30;
-        reasons.push(`Same campus (${candidate.campus})`);
-      }
-      if (candidate.fitnessGoal === currentStudent.fitnessGoal) {
-        score += 30;
-        reasons.push(`Same goal: ${candidate.fitnessGoal}`);
-      }
-      if (candidate.experienceLevel === currentStudent.experienceLevel) {
-        score += 20;
-        reasons.push(`Same level: ${candidate.experienceLevel}`);
-      }
-      const sharedDays = overlappingDays(candidate.preferredSchedule || [], currentStudent.preferredSchedule || []);
-      if (sharedDays.length > 0) {
-        score += Math.min(20, sharedDays.length * 5);
-        reasons.push(`Free ${sharedDays.join(', ')} together`);
-      }
-
-      return { student: candidate, matchScore: score, matchReasons: reasons };
-    });
-
-  return matches.filter((m) => m.matchScore > 0).sort((a, b) => b.matchScore - a.matchScore);
+  const students = await listStudents();
+  return students
+    .filter((student) => student.id && student.id !== currentStudent?.id)
+    .map((student) => ({ student, ...score(currentStudent, student) }));
 }
 
-function overlappingDays(a, b) {
-  return a.filter((day) => b.includes(day));
-}
-
-// --- FR-33: send a buddy request -------------------------------------------
-export async function sendBuddyRequest(fromStudentId, toStudentId) {
-  if (missingFirebase()) return null;
-  const existingQuery = query(
-    requestsRef(),
-    where('fromStudentId', '==', fromStudentId),
-    where('toStudentId', '==', toStudentId),
-    where('status', '==', 'pending')
-  );
-  const existingSnap = await getDocs(existingQuery);
-  if (!existingSnap.empty) {
-    const d = existingSnap.docs[0];
-    return { id: d.id, ...d.data() };
+export async function sendBuddyRequest(fromId, toId) {
+  if (!isSupabaseConfigured || !supabase || !fromId || !toId || fromId === toId) return null;
+  // from_name + status=pending are enforced/derived server-side.
+  const { data, error } = await supabase
+    .from('buddy_requests')
+    .insert({ from_id: fromId, to_id: toId, status: 'pending' })
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    // Already requested — treat as success for UX.
+    if (String(error.code) === '23505') return { id: 'existing' };
+    return null;
   }
-
-  const docRef = await addDoc(requestsRef(), {
-    fromStudentId,
-    toStudentId,
-    status: 'pending',
-    createdAt: serverTimestamp(),
-  });
-
-  return { id: docRef.id, fromStudentId, toStudentId, status: 'pending' };
+  return data;
 }
 
-// --- FR-34: accept or reject a buddy request --------------------------------
-export async function respondToBuddyRequest(requestId, response) {
-  if (missingFirebase()) return undefined;
-  const requestDoc = doc(getDb(), 'buddyRequests', requestId);
-  await updateDoc(requestDoc, { status: response });
-  const updatedSnap = await getDoc(requestDoc);
-  return updatedSnap.exists() ? { id: updatedSnap.id, ...updatedSnap.data() } : undefined;
+export async function respondToBuddyRequest(requestId, decision) {
+  if (!supabase || !requestId) return;
+  const status = decision === 'accepted' ? 'accepted' : 'rejected';
+  const { error } = await supabase.from('buddy_requests').update({ status }).eq('id', requestId);
+  if (error) throw error;
 }
-
-// --- Helpers for screens -----------------------------------------------------
 
 export async function getIncomingRequests(studentId) {
-  if (missingFirebase()) return [];
-  const q = query(requestsRef(), where('toStudentId', '==', studentId), where('status', '==', 'pending'));
-  const snap = await getDocs(q);
-  const requests = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-  const withSenders = await Promise.all(
-    requests.map(async (request) => {
-      const sender = await getStudentById(request.fromStudentId);
-      return sender ? { request, sender } : null;
-    })
-  );
-  return withSenders.filter((item) => item !== null);
-}
-
-// Real-time version: calls onUpdate(items) whenever incoming requests change.
-// Returns an unsubscribe function - call it in your screen's useEffect cleanup.
-export function subscribeToIncomingRequests(studentId, onUpdate) {
-  if (missingFirebase()) {
-    onUpdate([]);
-    return () => {};
-  }
-  const q = query(requestsRef(), where('toStudentId', '==', studentId), where('status', '==', 'pending'));
-
-  return onSnapshot(q, async (snap) => {
-    const requests = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const withSenders = await Promise.all(
-      requests.map(async (request) => {
-        const sender = await getStudentById(request.fromStudentId);
-        return sender ? { request, sender } : null;
-      })
-    );
-    onUpdate(withSenders.filter((item) => item !== null));
+  if (!supabase || !studentId) return [];
+  const { data, error } = await supabase
+    .from('buddy_requests')
+    .select('id, from_id, from_name, status')
+    .eq('to_id', studentId)
+    .eq('status', 'pending');
+  if (error || !data) return [];
+  const directory = await listStudents();
+  return data.map((row) => {
+    const sender = directory.find((student) => student.id === row.from_id);
+    return {
+      id: row.id,
+      fromStudentId: row.from_id,
+      fromName: sender?.name || row.from_name || 'Student',
+      sender: sender || {
+        id: row.from_id,
+        name: row.from_name || 'Student',
+        campus: '',
+        fitnessGoal: '',
+        experienceLevel: '',
+      },
+    };
   });
 }
 
-// Firestore doesn't support a single OR query across two different fields
-// on older SDK setups, so we run two queries (as sender / as recipient)
-// and merge.
+export function subscribeToIncomingRequests(_studentId, onUpdate) {
+  getIncomingRequests(_studentId).then(onUpdate).catch(() => onUpdate([]));
+  return () => {};
+}
+
 export async function getMatchedBuddies(studentId) {
-  if (missingFirebase()) return [];
-  const sentQuery = query(requestsRef(), where('fromStudentId', '==', studentId), where('status', '==', 'accepted'));
-  const receivedQuery = query(requestsRef(), where('toStudentId', '==', studentId), where('status', '==', 'accepted'));
-
-  const [sentSnap, receivedSnap] = await Promise.all([getDocs(sentQuery), getDocs(receivedQuery)]);
-
-  const pairs = [
-    ...sentSnap.docs.map((d) => ({ requestId: d.id, buddyId: d.data().toStudentId })),
-    ...receivedSnap.docs.map((d) => ({ requestId: d.id, buddyId: d.data().fromStudentId })),
-  ];
-
-  const buddies = await Promise.all(
-    pairs.map(async ({ requestId, buddyId }) => {
-      const buddy = await getStudentById(buddyId);
-      return buddy ? { ...buddy, requestId } : undefined;
+  if (!supabase || !studentId) return [];
+  const { data, error } = await supabase
+    .from('buddy_requests')
+    .select('id, from_id, to_id, status')
+    .eq('status', 'accepted')
+    .or(`from_id.eq.${studentId},to_id.eq.${studentId}`);
+  if (error || !data) return [];
+  const directory = await listStudents();
+  return data
+    .map((row) => {
+      const otherId = row.from_id === studentId ? row.to_id : row.from_id;
+      const student = directory.find((item) => item.id === otherId);
+      if (!student) return null;
+      return { ...student, requestId: row.id };
     })
-  );
-  return buddies.filter((b) => b !== undefined);
+    .filter(Boolean);
 }
 
 export async function unfriendBuddy(requestId) {
-  if (missingFirebase() || !requestId) return undefined;
-  const requestDoc = doc(getDb(), 'buddyRequests', requestId);
-  await updateDoc(requestDoc, { status: 'unfriended' });
-  const updatedSnap = await getDoc(requestDoc);
-  return updatedSnap.exists() ? { id: updatedSnap.id, ...updatedSnap.data() } : undefined;
+  if (!supabase || !requestId) return;
+  const { error } = await supabase.from('buddy_requests').update({ status: 'ended' }).eq('id', requestId);
+  if (error) throw error;
 }
 
 export async function getStudentById(id) {
-  if (missingFirebase()) return undefined;
-  const snap = await getDoc(doc(getDb(), 'students', id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : undefined;
+  const students = await listStudents();
+  return students.find((student) => student.id === id);
+}
+
+export function currentBuddyUid() {
+  return currentUid();
 }

@@ -1,44 +1,47 @@
+import { palettes, spacing as baseSpacing, radius as baseRadius, display as baseDisplay } from '../../../context/ThemeContext';
+
+const dark = palettes.dark;
+
+/** Thin alias of app ThemeContext — keep workout import paths stable. */
 export const colors = {
-  background: '#FAFAFA',
-  card: '#FFFFFF',
-  cardElevated: '#F8F9FA',
-  text: '#1A1A1A',
-  muted: '#666666',
-  accent: '#BA4A0C',
-  accentDark: '#FCEFE9',
-  teal: '#006B63',
+  background: dark.background,
+  card: dark.card,
+  cardElevated: dark.cardElevated,
+  text: dark.text,
+  muted: dark.muted,
+  accent: dark.accent,
+  accentDark: dark.accentSoft,
+  teal: dark.accent,
   white: '#FFFFFF',
   black: '#000000',
-  today: '#1A1A1A',
-  tabBar: '#FFFFFF',
-  search: '#F8F9FA',
-  badge: '#D32F2F',
-  lightBg: '#FFFFFF',
-  lightMuted: '#888888',
-  lightText: '#1A1A1A',
-  lightCard: '#F8F9FA',
-  blue: '#006B63',
-  highlight: '#D32F2F',
-  green: '#2E7D32',
-  orange: '#FF6F00',
+  today: dark.accent,
+  tabBar: dark.tabBar,
+  search: dark.input,
+  badge: '#EF4444',
+  lightBg: dark.background,
+  lightMuted: dark.muted,
+  lightText: dark.text,
+  lightCard: dark.card,
+  blue: dark.accent,
+  highlight: dark.accentBright,
+  green: '#4ADE80',
+  orange: dark.accent,
+  border: dark.border,
 };
 
 export const lightColors = {
-  background: '#FAFAFA',
-  text: '#1A1A1A',
-  muted: '#666666',
-  blue: '#006B63',
+  background: palettes.light.background,
+  text: palettes.light.text,
+  muted: palettes.light.muted,
+  blue: palettes.light.accent,
 };
 
-export const spacing = {
-  screen: 20,
-  section: 24,
-  card: 16,
-  gap: 12,
-};
+export const spacing = { ...baseSpacing };
 
 export const radius = {
-  card: 22,
-  pill: 999,
-  circle: 999,
+  ...baseRadius,
+  pill: baseRadius.pill,
+  circle: baseRadius.circle,
 };
+
+export const display = { ...baseDisplay };

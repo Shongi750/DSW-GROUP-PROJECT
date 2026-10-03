@@ -14,6 +14,7 @@ import {
   searchExerciseDb,
   getRapidApiKey,
 } from '../lib/exercisedb';
+import { rememberedExercise } from '../lib/sessionApi';
 import { FLOOR_PLAN } from '../data/floorPlan';
 import { getTodayPlan } from '../data/planEngine';
 import { applyMainProfileSeed } from '../lib/seedFromMain';
@@ -278,7 +279,7 @@ export function AppProvider({ children }) {
       connectExerciseDb,
       searchRemote,
       loadBodyPart,
-      getExercise: (id) => lookupExercise(id, catalog),
+      getExercise: (id) => lookupExercise(id, catalog) || rememberedExercise(id),
       updateProfile: (patch) => persist({ ...profile, ...patch }),
       completeOnboarding: (patch = {}) =>
         persist({
@@ -348,7 +349,7 @@ export function AppProvider({ children }) {
           musicLinks: { ...(profile.musicLinks || {}), [platform]: (url || '').trim() },
         }),
       setMusicAutoOpen: (value) => persist({ ...profile, musicAutoOpen: Boolean(value) }),
-      saveCustomWorkout: ({ name, exerciseIds }) => {
+      saveCustomWorkout: ({ name, exerciseIds, exercises }) => {
         if (!exerciseIds?.length) return;
         persist({
           ...profile,
@@ -357,6 +358,7 @@ export function AppProvider({ children }) {
               id: `custom-${Date.now()}`,
               name: name || 'My workout',
               exerciseIds,
+              exercises: exercises || [],
               createdAt: new Date().toISOString(),
             },
             ...(profile.customWorkouts || []),

@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GoalPicker from './GoalPicker';
-import { colors, radius } from '../constants/theme';
+import { colors, radius, display } from '../constants/theme';
 import { PANTRY_ORDER, STAPLE_FOODS } from '../data/foodClasses';
 import { formatAmount } from '../data/goals';
 import { buildCustomMeal, plateCoach, scorePlate } from '../lib/customPlate';
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: colors.white,
+    backgroundColor: colors.background,
   },
   scroll: {
     flex: 1,
@@ -234,11 +234,10 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   title: {
-    marginTop: 4,
-    fontSize: 26,
-    fontWeight: '800',
+    ...display,
+    marginTop: 6,
+    fontSize: 28,
     color: colors.text,
-    letterSpacing: -0.5,
   },
   meta: {
     marginTop: 4,
@@ -259,7 +258,7 @@ const styles = StyleSheet.create({
   coach: {
     marginTop: 16,
     backgroundColor: colors.primarySoft,
-    borderRadius: 16,
+    borderRadius: 6,
     padding: 14,
   },
   coachTitle: {
@@ -304,10 +303,10 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
   },
   heading: {
+    ...display,
     marginTop: 22,
     marginBottom: 10,
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 17,
     color: colors.text,
   },
   empty: {
@@ -380,7 +379,7 @@ const styles = StyleSheet.create({
   save: {
     marginTop: 24,
     backgroundColor: colors.primary,
-    borderRadius: 16,
+    borderRadius: 6,
     paddingVertical: 14,
     alignItems: 'center',
   },

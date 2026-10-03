@@ -1,4 +1,6 @@
 import React from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,9 +10,21 @@ import FitnessGoalScreen from '../screens/onboarding/FitnessGoalScreen';
 import DietPreferencesScreen from '../screens/profile/DietPreferencesScreen';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
-import { showNotificationsSheet, showPrivacySheet } from '../lib/reminders';
-import { nestedStackProps, openTab, resetTabListener } from './nav';
+import { showNotificationsSheet } from '../lib/reminders';
+import { nestedStackProps, openNested, openTab } from './nav';
 import { DEFAULT_AVATAR } from '../data/profileAvatars';
+import { hapticSelection } from '../lib/haptics';
+
+function BlurTabBarBackground() {
+  if (Platform.OS === 'web') {
+    return <View style={[StyleSheet.absoluteFill, styles.tabBarFallback]} />;
+  }
+  return (
+    <BlurView intensity={64} tint="dark" style={StyleSheet.absoluteFill}>
+      <View style={styles.tabBarScrim} />
+    </BlurView>
+  );
+}
 
 const Tab = createBottomTabNavigator();
 const ProfileStackNav = createNativeStackNavigator();
@@ -43,10 +57,11 @@ function ProfileHome({ navigation }) {
       onFitnessGoals={openSetup}
       onEatAllergies={() => navigation.navigate('DietPreferences')}
       onNotifications={showNotificationsSheet}
-      onPrivacySecurity={showPrivacySheet}
+      onPrivacySecurity={() => navigation.navigate('PrivacySecurity')}
       onLogout={logout}
       onDeleteAccount={deleteAccount}
       onOpenAdmin={canSeeCampusAdmin ? () => navigation.navigate('AdminHome') : undefined}
+      onOpenMentorHub={() => openNested(navigation, ['Community', 'MentorHub'])}
     />
   );
 }
@@ -71,6 +86,11 @@ function ProfileTab() {
       <ProfileStackNav.Screen name="ProfileHome" component={ProfileHome} />
       <ProfileStackNav.Screen name="StudentSetup" component={StudentSetup} />
       <ProfileStackNav.Screen name="DietPreferences" component={DietPreferencesScreen} />
+      <ProfileStackNav.Screen
+        name="PrivacySecurity"
+        getComponent={() => require('../screens/profile/PrivacySecurityScreen').default}
+        options={{ headerShown: true, title: 'Privacy & security' }}
+      />
       <ProfileStackNav.Screen
         name="AdminHome"
         getComponent={() => require('../features/admin/screens/AdminDashboardScreen').default}
@@ -100,6 +120,33 @@ function CommunityTab() {
   return <CommunityStack />;
 }
 
+function RaisedWorkoutButton({ onPress, accessibilityState, testID, style }) {
+  const { isDark } = useTheme();
+  const focused = accessibilityState?.selected;
+  return (
+    <Pressable
+      onPress={(e) => {
+        hapticSelection();
+        onPress?.(e);
+      }}
+      testID={testID}
+      style={[styles.raisedWrap, style]}
+      accessibilityRole="button"
+      accessibilityState={accessibilityState}
+    >
+      <View
+        style={[
+          styles.raisedButton,
+          { borderColor: isDark ? '#0A0A0A' : '#FFFFFF' },
+          focused && styles.raisedButtonFocused,
+        ]}
+      >
+        <Ionicons name="barbell" size={26} color="#FFFFFF" />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function MainTabs() {
   const { colors } = useTheme();
   return (
@@ -110,14 +157,26 @@ export default function MainTabs() {
         tabBarInactiveTintColor: colors.tabInactive,
         lazy: true,
         freezeOnBlur: false,
-        sceneStyle: { flex: 1, minHeight: 0 },
-        tabBarStyle: {
-          height: 72,
-          paddingBottom: 10,
-          paddingTop: 8,
-          borderTopColor: colors.border,
-          backgroundColor: colors.tabBar,
+        detachInactiveScreens: false,
+        sceneStyle: { flex: 1, minHeight: 0, backgroundColor: 'transparent' },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 0.4,
+          marginTop: 2,
         },
+        tabBarStyle: {
+          height: 78,
+          paddingBottom: 12,
+          paddingTop: 8,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: 'rgba(255,255,255,0.14)',
+          backgroundColor: 'transparent',
+          position: 'absolute',
+          overflow: 'visible',
+        },
+        tabBarBackground: () => <BlurTabBarBackground />,
+        tabBarActiveBackgroundColor: 'transparent',
         tabBarIcon: ({ color, focused, size }) => {
           if (route.name === 'Meals') {
             return (
@@ -134,20 +193,69 @@ export default function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={DashboardScreen} />
-      <Tab.Screen name="Meals" component={MealsTab} />
+      <Tab.Screen
+        name="Home"
+        component={DashboardScreen}
+        listeners={{ tabPress: () => hapticSelection() }}
+      />
+      <Tab.Screen
+        name="Meals"
+        component={MealsTab}
+        listeners={{ tabPress: () => hapticSelection() }}
+      />
       <Tab.Screen
         name="Workout"
         component={WorkoutTab}
-        options={{ tabBarStyle: { display: 'none', height: 0, overflow: 'hidden' } }}
+        options={{
+          tabBarLabel: () => null,
+          tabBarButton: (props) => <RaisedWorkoutButton {...props} />,
+          tabBarStyle: { display: 'none', height: 0, overflow: 'hidden' },
+        }}
       />
-      <Tab.Screen name="Community" component={CommunityTab} listeners={resetTabListener('Community')} />
+      <Tab.Screen
+        name="Community"
+        component={CommunityTab}
+        listeners={{ tabPress: () => hapticSelection() }}
+      />
       <Tab.Screen
         name="Profile"
         component={ProfileTab}
-        listeners={resetTabListener('Profile')}
         options={{ freezeOnBlur: false }}
+        listeners={{ tabPress: () => hapticSelection() }}
       />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBarFallback: {
+    backgroundColor: 'rgba(14,10,8,0.88)',
+  },
+  tabBarScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10,10,10,0.35)',
+  },
+  raisedWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    top: -22,
+  },
+  raisedButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 999,
+    backgroundColor: '#FF6A00',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FF6A00',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 10,
+    borderWidth: 3,
+  },
+  raisedButtonFocused: {
+    backgroundColor: '#FF8A1A',
+  },
+});

@@ -14,7 +14,7 @@ export default function EquipmentScreen({ navigation }) {
   return (
     <GlassScreen>
       <View className="mt-2 h-1 w-[60%] rounded bg-accent" />
-      <Text className="mt-6 text-[26px] font-extrabold text-ink">What can you train with?</Text>
+      <Text className="mt-6 text-[26px] font-display uppercase text-ink">What can you train with?</Text>
       <Text className="mb-6 mt-2 leading-5 text-muted">
         Exercise selection follows your equipment. You can change this later without losing progress.
       </Text>
@@ -27,7 +27,7 @@ export default function EquipmentScreen({ navigation }) {
         >
           <View className="flex-row items-center gap-3">
             <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/20">
-              <Ionicons name={item.icon} size={20} color="#BA4A0C" />
+              <Ionicons name={item.icon} size={20} color="#FF6A00" />
             </View>
             <View className="flex-1">
               <Text className="text-lg font-extrabold text-ink">{item.name}</Text>

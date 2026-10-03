@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
-import { colors } from '../constants/theme';
+import { colors, display } from '../constants/theme';
 import { TABS } from '../data/planner';
 
 export default function PlaceholderScreen({ tabId, onOpenProfile }) {
@@ -29,7 +29,7 @@ export default function PlaceholderScreen({ tabId, onOpenProfile }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.background,
   },
   body: {
     flex: 1,
@@ -48,8 +48,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
+    ...display,
     fontSize: 24,
-    fontWeight: '800',
     color: colors.text,
   },
   copy: {

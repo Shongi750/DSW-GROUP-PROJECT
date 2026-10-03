@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
+import { useTheme } from '../../../context/ThemeContext';
 import ExerciseGif from '../components/exercisegif';
 import { FLOOR_PLAN } from '../data/floorPlan';
-import { GlassCard, GlassPanel, GlassScreen } from '../components/glass';
+import { GlassScreen } from '../components/glass';
 import PrimaryButton from '../components/button';
 import { normalizeMoves } from '../lib/session';
 import { openWorkoutMusic } from '../lib/music';
 import { GOAL_MUSIC } from '../data/music';
+import { useWorkoutLeave } from '../context/LeaveContext';
+import { useActiveSession } from '../../../context/ActiveSessionContext';
 
 const READY_SECONDS = 3;
 
@@ -18,7 +21,7 @@ function buzz(kind = 'light') {
     if (kind === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   } catch {
-    // haptics are optional on web
+    // optional
   }
 }
 
@@ -28,23 +31,23 @@ function formatTime(total) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function Stepper({ label, value, onChange, step = 1, min = 0 }) {
+function Stepper({ label, value, onChange, step = 1, min = 0, colors }) {
   return (
-    <View className="items-center">
-      <Text className="mb-1 text-xs text-muted">{label}</Text>
-      <View className="flex-row items-center gap-3">
+    <View style={styles.stepper}>
+      <Text style={[styles.stepLabel, { color: colors.muted }]}>{label}</Text>
+      <View style={styles.stepRow}>
         <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-surface"
+          style={[styles.stepBtn, { backgroundColor: colors.card }]}
           onPress={() => onChange(Math.max(min, Math.round((value - step) * 10) / 10))}
         >
-          <Ionicons name="remove" size={16} color="#1A1A1A" />
+          <Ionicons name="remove" size={16} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="min-w-[48px] text-center text-2xl font-extrabold text-ink">{value}</Text>
+        <Text style={[styles.stepValue, { color: colors.text }]}>{value}</Text>
         <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-surface"
+          style={[styles.stepBtn, { backgroundColor: colors.card }]}
           onPress={() => onChange(Math.round((value + step) * 10) / 10)}
         >
-          <Ionicons name="add" size={16} color="#1A1A1A" />
+          <Ionicons name="add" size={16} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
     </View>
@@ -52,7 +55,11 @@ function Stepper({ label, value, onChange, step = 1, min = 0 }) {
 }
 
 export default function PlayerScreen({ navigation, route }) {
-  const { completeExercise, completeMany, logSession, getExercise, profile } = useApp();
+  const { colors } = useTheme();
+  const { completeExercise, completeMany, logSession, getExercise, profile, program, plan } = useApp();
+  const { startSession, updateSession, endSession } = useActiveSession();
+  const { onLeave } = useWorkoutLeave();
+  const minimize = () => (onLeave ? onLeave() : navigation.goBack());
   const [moves, setMoves] = useState(() =>
     normalizeMoves(
       route.params?.moves || (route.params?.exerciseIds || ['arm-circles']).map((id) => ({ id })),
@@ -97,6 +104,25 @@ export default function PlayerScreen({ navigation, route }) {
   const exercise = useMemo(() => (current ? getExercise(current.id) : null), [current, getExercise]);
   const nextExercise = nextMove ? getExercise(nextMove.id) : null;
   const isSets = current?.mode === 'sets';
+  const progress = moves.length ? (index + (phase === 'go' || phase === 'rest' || phase === 'advance' ? 0.35 : 0)) / moves.length : 0;
+
+  useEffect(() => {
+    startSession({
+      title: route.params?.title || program?.goal?.name || plan?.name || 'Workout',
+      startedAt: startedAt.current,
+      movesTotal: moves.length,
+      currentMove: exercise?.name || '',
+    });
+    return () => endSession();
+  }, []);
+
+  useEffect(() => {
+    updateSession({
+      movesDone: doneRef.current.size,
+      currentMove: exercise?.name || '',
+      state: phase === 'rest' ? 'Rest' : paused ? 'Paused' : 'Live',
+    });
+  }, [index, exercise?.id, phase, paused, updateSession]);
 
   useEffect(() => {
     advancedForIndex.current = null;
@@ -224,74 +250,97 @@ export default function PlayerScreen({ navigation, route }) {
     setPhase('done');
   };
 
-  if (!exercise) return null;
-
-  const stage = (
-    <GlassCard className="mx-1 my-2 flex-1">
-      <View className="min-h-[180px] items-center justify-center">
-        {exercise.gifUrl || exercise.photoFrames?.length ? (
-          <ExerciseGif
-            uri={exercise.gifUrl}
-            frames={exercise.photoFrames}
-            style={{ height: 180, width: '100%' }}
-          />
-        ) : (
-          <Text className="text-[28px] font-extrabold text-ink">{exercise.name}</Text>
-        )}
-      </View>
-    </GlassCard>
-  );
+  useEffect(() => {
+    if (phase !== 'done') return;
+    const minutes = Math.max(1, Math.round((Date.now() - startedAt.current) / 60000));
+    navigation.replace('Finish', {
+      minutes,
+      moves: doneRef.current.size,
+      title: 'Workout complete',
+      programId,
+    });
+  }, [phase, navigation, programId]);
 
   if (phase === 'done') {
     return (
       <GlassScreen scroll={false} contentClassName="flex-1 items-center justify-center">
-        <Text className="text-center text-[22px] font-extrabold text-accent">Workout logged</Text>
-        <Text className="mt-2 text-center font-bold text-ink">
-          {doneRef.current.size} exercises · {Math.max(1, Math.round((Date.now() - startedAt.current) / 60000))} min
-        </Text>
-        <Text className="mt-2 text-center text-muted">
-          Missed a day? Take the next scheduled session rather than doubling up — recovery is part of the plan.
-        </Text>
-        <View className="mt-6 w-full">
-          <PrimaryButton title="Close" icon="checkmark" onPress={() => navigation.goBack()} />
-        </View>
+        <Text className="text-center font-bold text-ink">Saving your session…</Text>
       </GlassScreen>
     );
   }
 
+  if (!exercise) return null;
+
+  const bar = (
+    <View style={[styles.track, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
+      <View style={[styles.fill, { width: `${Math.min(100, Math.max(6, progress * 100))}%`, backgroundColor: colors.accent }]} />
+    </View>
+  );
+
+  const header = (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.iconBtn} onPress={minimize}>
+        <Ionicons name="chevron-down" size={22} color="#FFFFFF" />
+      </TouchableOpacity>
+      <Text style={styles.progressLabel}>
+        {index + 1} / {moves.length}
+      </Text>
+      <TouchableOpacity style={styles.iconBtn} onPress={startMusic}>
+        <Ionicons name="musical-notes" size={18} color={colors.accent} />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const media = (
+    <View style={styles.media}>
+      {exercise.gifUrl || exercise.photoFrames?.length ? (
+        <ExerciseGif
+          uri={exercise.gifUrl}
+          frames={exercise.photoFrames}
+          style={{ height: 220, width: '100%' }}
+        />
+      ) : (
+        <Text style={styles.mediaFallback}>{exercise.name}</Text>
+      )}
+    </View>
+  );
+
+  const nextCard = nextExercise ? (
+    <View style={[styles.nextCard, { backgroundColor: colors.card }]}>
+      <Text style={[styles.nextKicker, { color: colors.accent }]}>UP NEXT</Text>
+      <Text style={[styles.nextName, { color: colors.text }]} numberOfLines={1}>
+        {nextExercise.name}
+      </Text>
+    </View>
+  ) : (
+    <View style={[styles.nextCard, { backgroundColor: colors.card }]}>
+      <Text style={[styles.nextKicker, { color: colors.accent }]}>LAST MOVE</Text>
+      <Text style={[styles.nextName, { color: colors.text }]}>Finish strong</Text>
+    </View>
+  );
+
   if (phase === 'ready' || phase === 'rest') {
     return (
       <GlassScreen scroll={false} contentClassName="flex-1">
-        <View className="flex-row items-center justify-between">
-          <TouchableOpacity className="p-2" onPress={() => navigation.goBack()}>
-            <Ionicons name="close" size={22} color="#8E8E93" />
-          </TouchableOpacity>
-          <TouchableOpacity className="flex-row items-center gap-1.5 p-2" onPress={startMusic}>
-            <Ionicons name="musical-notes" size={18} color="#BA4A0C" />
-            <Text className="text-[13px] font-semibold text-accent">Music</Text>
-          </TouchableOpacity>
-        </View>
-        {stage}
-        <Text className="text-center text-[22px] font-extrabold text-accent">
-          {phase === 'rest' ? 'REST' : 'READY'}
+        {header}
+        {bar}
+        {media}
+        <Text style={[styles.phaseTag, { color: colors.accent }]}>
+          {phase === 'rest' ? 'REST' : 'GET READY'}
         </Text>
-        <Text className="mt-2 px-4 text-center font-bold text-ink">
+        <Text style={[styles.moveTitle, { color: colors.text }]}>
           {phase === 'rest' && isSets && setNo + 1 < (current.sets || 1)
-            ? `Next set ${setNo + 2} · ${exercise.name}`
+            ? `Set ${setNo + 2} · ${exercise.name}`
             : phase === 'rest'
-              ? nextExercise?.name || 'Last move done'
-              : exercise.name.toUpperCase()}
+              ? nextExercise?.name || 'Almost done'
+              : exercise.name}
         </Text>
-        <Text className="mt-1.5 text-center text-muted">
-          {index + 1} / {moves.length}
-          {isSets ? ` · set ${setNo + 1}/${current.sets}` : ''}
-        </Text>
-        <View className="flex-row items-center justify-center gap-4 py-7">
-          <GlassPanel className="h-[88px] w-[88px] rounded-full border-accent">
-            <View className="h-full items-center justify-center">
-              <Text className="text-[28px] font-extrabold text-ink">{phase === 'rest' ? restLeft : readyLeft}</Text>
-            </View>
-          </GlassPanel>
+        <View style={styles.countdownWrap}>
+          <View style={[styles.countdown, { borderColor: colors.accent }]}>
+            <Text style={[styles.countdownNum, { color: colors.text }]}>
+              {phase === 'rest' ? restLeft : readyLeft}
+            </Text>
+          </View>
           <TouchableOpacity
             onPress={() => {
               if (phase === 'rest') {
@@ -301,71 +350,70 @@ export default function PlayerScreen({ navigation, route }) {
                 } else setPhase('advance');
               } else setPhase('go');
             }}
-            className="p-2"
+            style={[styles.skipPill, { backgroundColor: colors.accent }]}
           >
-            <Ionicons name="chevron-forward" size={22} color="#8E8E93" />
+            <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         </View>
+        {nextCard}
       </GlassScreen>
     );
   }
 
   return (
     <GlassScreen scroll={false} contentClassName="flex-1">
-      <View className="flex-row items-center justify-between">
-        <TouchableOpacity className="p-2" onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={22} color="#8E8E93" />
-        </TouchableOpacity>
-        <TouchableOpacity className="flex-row items-center gap-1.5 p-2" onPress={startMusic}>
-          <Ionicons name="musical-notes" size={18} color="#BA4A0C" />
-          <Text className="text-[13px] font-semibold text-accent">Music</Text>
-        </TouchableOpacity>
-      </View>
-      {stage}
-      <Text className="mt-2 px-4 text-center font-bold text-ink">{exercise.name.toUpperCase()}</Text>
-      <Text className="mt-1.5 text-center text-muted">
-        {index + 1} / {moves.length}
-        {nextExercise ? ` · next: ${nextExercise.name}` : ' · last move'}
-        {isSets ? ` · set ${setNo + 1}/${current.sets}` : ''}
-      </Text>
-      {current.note ? (
-        <Text className="mt-2 px-6 text-center text-[13px] leading-5 text-muted">{current.note}</Text>
-      ) : null}
+      {header}
+      {bar}
+      {media}
+      <Text style={[styles.moveTitle, { color: colors.text }]}>{exercise.name}</Text>
+      {isSets ? (
+        <Text style={[styles.meta, { color: colors.muted }]}>
+          Set {setNo + 1}/{current.sets}
+        </Text>
+      ) : (
+        <Text style={[styles.timer, { color: colors.text }]}>{formatTime(remaining)}</Text>
+      )}
 
       {isSets ? (
         <>
-          <View className="mt-4 flex-row justify-around">
-            <Stepper label="Reps" value={reps} onChange={setReps} min={1} />
-            <Stepper label="kg" value={weightKg} onChange={setWeightKg} step={0.5} min={0} />
+          <View style={styles.steppers}>
+            <Stepper label="Reps" value={reps} onChange={setReps} min={1} colors={colors} />
+            <Stepper label="kg" value={weightKg} onChange={setWeightKg} step={0.5} min={0} colors={colors} />
           </View>
-          <View className="mt-5">
+          <View style={{ marginTop: 16 }}>
             <PrimaryButton title={`Log set ${setNo + 1}`} icon="checkmark" onPress={logSet} />
           </View>
         </>
-      ) : (
-        <Text className="my-3 text-center text-5xl font-extrabold text-ink">{formatTime(remaining)}</Text>
-      )}
+      ) : null}
 
       {current.swapId ? (
-        <TouchableOpacity onPress={swap} className="items-center py-2">
-          <Text className="font-extrabold text-accent">Swap this move</Text>
+        <TouchableOpacity onPress={swap} style={styles.swap}>
+          <Text style={{ color: colors.accent, fontWeight: '800' }}>Swap this move</Text>
         </TouchableOpacity>
       ) : null}
 
-      <View className="mt-auto flex-row items-center justify-center gap-7 pb-8">
-        <TouchableOpacity onPress={() => index > 0 && setIndex(index - 1)}>
-          <Ionicons name="play-skip-back" size={28} color="#1A1A1A" />
+      {paused && !isSets ? (
+        <TouchableOpacity onPress={finishEarly} style={styles.endLink}>
+          <Text style={[styles.endText, { color: colors.muted }]}>End session</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {nextCard}
+
+      <View style={styles.controls}>
+        <TouchableOpacity onPress={() => index > 0 && setIndex(index - 1)} style={styles.controlBtn}>
+          <Ionicons name="play-skip-back" size={26} color="#FFFFFF" />
         </TouchableOpacity>
         {!isSets ? (
           <TouchableOpacity
-            className="h-12 w-16 items-center justify-center rounded-2xl bg-accent"
+            style={[styles.playBtn, { backgroundColor: colors.accent }]}
             onPress={() => setPaused((value) => !value)}
           >
-            <Ionicons name={paused ? 'play' : 'pause'} size={26} color="#FFFFFF" />
+            <Ionicons name={paused ? 'play' : 'pause'} size={28} color="#FFFFFF" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity className="h-12 w-16 items-center justify-center rounded-2xl bg-surface" onPress={finishEarly}>
-            <Ionicons name="stop" size={22} color="#1A1A1A" />
+          <TouchableOpacity style={[styles.playBtn, { backgroundColor: colors.card }]} onPress={finishEarly}>
+            <Ionicons name="stop" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -373,10 +421,164 @@ export default function PlayerScreen({ navigation, route }) {
             if (index >= moves.length - 1) finishEarly();
             else setIndex(index + 1);
           }}
+          style={styles.controlBtn}
         >
-          <Ionicons name="play-skip-forward" size={28} color="#1A1A1A" />
+          <Ionicons name="play-skip-forward" size={26} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
     </GlassScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressLabel: {
+    color: '#C9C9C9',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  track: {
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  media: {
+    height: 220,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: '#141414',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaFallback: {
+    fontFamily: 'Anton_400Regular',
+    fontSize: 28,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
+  phaseTag: {
+    marginTop: 18,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  moveTitle: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontFamily: 'Anton_400Regular',
+    fontSize: 26,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    paddingHorizontal: 8,
+  },
+  meta: {
+    marginTop: 6,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  timer: {
+    marginTop: 10,
+    textAlign: 'center',
+    fontSize: 48,
+    fontWeight: '800',
+  },
+  countdownWrap: {
+    alignItems: 'center',
+    marginTop: 18,
+    gap: 14,
+  },
+  countdown: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownNum: {
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  skipPill: {
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  skipText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  nextCard: {
+    marginTop: 18,
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  nextKicker: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  nextName: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  steppers: {
+    marginTop: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  stepper: { alignItems: 'center' },
+  stepLabel: { fontSize: 12, marginBottom: 6 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepValue: { minWidth: 48, textAlign: 'center', fontSize: 24, fontWeight: '800' },
+  swap: { alignItems: 'center', marginTop: 12 },
+  endLink: { alignItems: 'center', marginTop: 14, paddingVertical: 4 },
+  endText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' },
+  controls: {
+    marginTop: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 28,
+    paddingBottom: 20,
+    paddingTop: 12,
+  },
+  controlBtn: { padding: 8 },
+  playBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

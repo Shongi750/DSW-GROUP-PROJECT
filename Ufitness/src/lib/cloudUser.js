@@ -1,26 +1,27 @@
-import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
-import { deleteCloudCaches } from './cloudCache';
-import { getDb } from './firebase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import { setupLooksComplete } from './profileStore';
-
-const USERS = 'users';
-const STUDENTS = 'students';
+import { normalizePrivacy } from './privacy';
 
 function publicStudent(profile) {
+  const privacy = normalizePrivacy(profile.privacy);
   return {
     name: profile.name || 'Student',
-    campus: profile.campus || 'APK',
-    fitnessGoal: profile.fitnessGoal || 'General fitness',
-    experienceLevel: profile.experienceLevel || 'Beginner',
+    campus: privacy.showCampus ? profile.campus || 'APK' : '',
+    fitnessGoal: privacy.showGoal ? profile.fitnessGoal || 'General fitness' : '',
+    experienceLevel: privacy.showExperience ? profile.experienceLevel || 'Beginner' : '',
     workoutLocation: profile.workoutPreference || 'Gym',
     yearOfStudy: profile.yearOfStudy || '',
     course: profile.course || '',
     gender: profile.gender || '',
     avatarUrl: profile.avatarUrl || '',
+    discoverable: privacy.discoverable,
+    appearAsMentor: privacy.appearAsMentor,
+    shareProgressWithMentor: privacy.shareProgressWithMentor,
   };
 }
 
 function cloudPayload(uid, profile) {
+  const privacy = normalizePrivacy(profile.privacy);
   return {
     userId: uid,
     ownerUid: uid,
@@ -42,31 +43,35 @@ function cloudPayload(uid, profile) {
     dietFilters: profile.dietFilters || {},
     daysPerWeek: Number(profile.daysPerWeek) || 4,
     avatarUrl: profile.avatarUrl || '',
+    roles: Array.isArray(profile.roles) ? profile.roles : ['student'],
+    privacy,
     onboardingComplete: setupLooksComplete(profile),
     updatedAt: new Date().toISOString(),
   };
 }
 
 export async function fetchCloudUser(uid) {
-  const db = getDb();
-  if (!db || !uid) return null;
+  if (!isSupabaseConfigured || !supabase || !uid) return null;
   try {
-    const snap = await getDoc(doc(db, USERS, uid));
-    return snap.exists() ? snap.data() : null;
+    const { data, error } = await supabase.from('profiles').select('profile').eq('id', uid).maybeSingle();
+    if (error || !data?.profile) return null;
+    return data.profile;
   } catch {
     return null;
   }
 }
 
 export async function saveCloudUser(uid, profile) {
-  const db = getDb();
-  if (!db || !uid || !setupLooksComplete(profile)) return false;
+  if (!isSupabaseConfigured || !supabase || !uid || !setupLooksComplete(profile)) return false;
   const payload = cloudPayload(uid, profile);
   try {
-    await Promise.all([
-      setDoc(doc(db, USERS, uid), payload, { merge: true }),
-      setDoc(doc(db, STUDENTS, uid), publicStudent(profile), { merge: true }),
-    ]);
+    const { error } = await supabase.from('profiles').upsert({
+      id: uid,
+      email: profile.email || '',
+      profile: { ...payload, public: publicStudent(profile) },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw error;
     return true;
   } catch (error) {
     console.warn('Cloud profile save skipped', error?.message || error);
@@ -75,14 +80,12 @@ export async function saveCloudUser(uid, profile) {
 }
 
 export async function deleteCloudUser(uid) {
-  const db = getDb();
-  if (!db || !uid) return;
-  await Promise.allSettled([
-    deleteDoc(doc(db, USERS, uid)),
-    deleteDoc(doc(db, STUDENTS, uid)),
-    deleteDoc(doc(db, 'profiles', uid)),
-    deleteCloudCaches(uid),
-  ]);
+  if (!isSupabaseConfigured || !supabase || !uid) return;
+  try {
+    await supabase.from('profiles').delete().eq('id', uid);
+  } catch (error) {
+    console.warn('Cloud profile delete skipped', error?.message || error);
+  }
 }
 
 export function mergeCloudProfile(local, remote) {

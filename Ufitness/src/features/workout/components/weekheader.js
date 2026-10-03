@@ -9,10 +9,10 @@ export default function WeekHeader({ week, totalWeeks }) {
       <View className="h-7 w-7 items-center justify-center rounded-full bg-accent">
         <Text className="text-[13px] font-extrabold text-white">{week}</Text>
       </View>
-      <Text className="flex-1 text-[22px] font-bold text-ink">
+      <Text className="flex-1 text-[22px]" style={{ fontFamily: 'Anton_400Regular', letterSpacing: 0.8, textTransform: 'uppercase', color: '#FFFFFF' }}>
         Week {week} of {totalWeeks}
       </Text>
-      <View className="h-2 w-11 overflow-hidden rounded-full bg-black/10">
+      <View className="h-2 w-11 overflow-hidden rounded-full bg-white/10">
         <View className="h-full rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
       </View>
     </View>

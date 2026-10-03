@@ -27,7 +27,11 @@ On web, the page itself does not scroll (`body` is locked). Inner `ScrollView`s 
 ```
 Welcome splash
     → Login or Register
-        → Confirm UJ student email (Firebase verification link)
+        → 8-digit code to the UJ student inbox (Supabase email OTP)
+        → Fitness setup (name required)
+        → Main tabs
+
+Accounts use Supabase, not Firebase. Register stores the password only in memory until the code is confirmed. Meals, community, reminders, eaten plates, and the workout plan save to `user_docs` for that user id. Group chat uses `group_messages` and updates live. Run `Ufitness/supabase/schema.sql` once in the Supabase SQL editor before buddies, chat, and cloud save will work.
             → Fitness goal setup (first time only)
                 → Main tabs: Home / Meals / Workout / Community / Profile
 ```
@@ -309,9 +313,13 @@ Ufitness/
 
 ---
 
-## Backend choice: Firebase, not Supabase
+## Backend: Supabase
 
-**Use Firebase** to turn this from a device-only demo into a real app. Do not add Supabase.
+Accounts, profiles, buddy requests, group members, group chat, and per-student documents (`user_docs`) live in the Supabase project named in `Ufitness/.env`. Do not add Firebase back.
+
+Run `supabase/schema.sql` in the SQL editor after pulling these tables. Row level security keeps each student on their own documents. `list_students()` is what Buddies, Mentors, and Campus Admin read, and it does not return email addresses.
+
+The older Firebase sections below are out of date.
 
 ### Why Firebase wins *for this repo*
 
@@ -329,6 +337,8 @@ Buddy data that lived only in the old `buddy-12b08` project does not move automa
 ### One login (done)
 
 Register/Login/Sign-out call Firebase Auth in `src/context/AppContext.js`. The uid is the Firebase uid. Workout listens to the same Auth instance and does not auto-guest when Firebase is configured. Sign out clears both.
+
+Fingerprint / Face ID is a second step after the first email-and-password login. `expo-local-authentication` proves it is the same person; `expo-secure-store` keeps the password in the device keystore (not AsyncStorage). Cold start with a saved session shows Unlock first. After sign-out, Login offers **Unlock with fingerprint**. Web has no Face ID — type the password. Turn it off under Profile → Privacy & Security. Delete account wipes the keystore copy.
 
 Onboarding (campus, course, year, goal, budget) writes to Firestore `users/{uid}` and a buddy-facing `students/{uid}` once setup is complete. Login reads that if this device has no cache. AsyncStorage stays the offline copy.
 

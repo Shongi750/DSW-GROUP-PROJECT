@@ -10,7 +10,7 @@ export default function DisclaimerScreen() {
 
   return (
     <GlassScreen scroll={false} contentClassName="flex-1">
-      <Text className="mt-3 text-[26px] font-extrabold text-ink">Before you start</Text>
+      <Text className="mt-3 text-[26px] font-display uppercase text-ink">Before you start</Text>
       <GlassCard className="mt-4">
         <Text className="text-base leading-[22px] text-muted">
           uFitness is general fitness, not medical care. Stop if you feel sharp pain, dizziness, or chest discomfort, and talk to a clinician if you have an injury or condition.

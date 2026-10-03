@@ -4,7 +4,7 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--color-background, #FAFAFA);
+  background: var(--color-background, #0e0a08);
 }
 
 #root,
@@ -15,24 +15,62 @@ body,
   min-height: 0;
 }
 
+/* Dark: warm charcoal + amber */
+html.uf-dark body,
+html.uf-dark #root {
+  background:
+    radial-gradient(ellipse 80% 50% at 15% -10%, rgba(255, 106, 0, 0.28), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 95% 35%, rgba(255, 138, 26, 0.14), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 20% 90%, rgba(255, 106, 0, 0.1), transparent 55%),
+    linear-gradient(180deg, #1a1008 0%, #0e0a08 35%, #0a0807 100%) !important;
+}
+
 html.uf-dark .bg-background {
-  background-color: #141210 !important;
+  background-color: transparent !important;
 }
 html.uf-dark .bg-surface,
 html.uf-dark .bg-white,
 html.uf-dark .bg-white\/80,
 html.uf-dark .bg-white\/70 {
-  background-color: #1e1c1b !important;
+  background-color: #1a1612 !important;
 }
 html.uf-dark .bg-accentDark {
-  background-color: #3a2a22 !important;
+  background-color: #2a1a0e !important;
 }
 html.uf-dark .text-ink {
   color: #f4f1ee !important;
 }
 html.uf-dark .text-muted {
-  color: #a8a29e !important;
+  color: #9a9a9a !important;
 }
 html.uf-dark .border-black\/10 {
-  border-color: #2e2a28 !important;
+  border-color: #2e2620 !important;
+}
+
+/* Light: warm cream + soft orange wash */
+html.uf-light body,
+html.uf-light #root {
+  background:
+    radial-gradient(ellipse 70% 45% at 10% -5%, rgba(255, 106, 0, 0.12), transparent 55%),
+    radial-gradient(ellipse 55% 40% at 95% 40%, rgba(255, 138, 26, 0.08), transparent 50%),
+    linear-gradient(180deg, #fff8f2 0%, #f7f2ec 50%, #f3ebe3 100%) !important;
+}
+
+html.uf-light .bg-background {
+  background-color: transparent !important;
+}
+html.uf-light .bg-surface,
+html.uf-light .bg-white,
+html.uf-light .bg-white\/80,
+html.uf-light .bg-white\/70 {
+  background-color: #ffffff !important;
+}
+html.uf-light .text-ink {
+  color: #14110e !important;
+}
+html.uf-light .text-muted {
+  color: #6b635c !important;
+}
+html.uf-light .border-black\/10 {
+  border-color: #e8dfd6 !important;
 }

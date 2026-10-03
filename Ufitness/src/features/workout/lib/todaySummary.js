@@ -29,9 +29,11 @@ export async function loadTodayWorkoutSummary() {
   }
 
   const todayPlan = getTodayPlan(profile) || { type: 'rest', moves: [], session: null, status: '' };
-  const logged = (profile.history || []).find((item) => item.date === toDateKey());
-  const trainMinutes = todayPlan.type === 'train' ? estimateMinutes(todayPlan.moves || []) : 0;
-  const minutes = trainMinutes || Number(logged?.minutes || 0);
+  const today = toDateKey();
+  const minutes = (profile.history || [])
+    .filter((item) => item.date === today)
+    .reduce((sum, item) => sum + Number(item.minutes || 0), 0);
+  const plannedMinutes = todayPlan.type === 'train' ? estimateMinutes(todayPlan.moves || []) : 0;
   const type = todayPlan.type || 'rest';
 
   if (type === 'train') {
@@ -39,9 +41,11 @@ export async function loadTodayWorkoutSummary() {
       type,
       title: todayPlan.session?.name || 'Today’s session',
       description: todayPlan.status || 'Follow the same session as the Workout tab.',
-      minutes,
+      minutes: 0,
+      plannedMinutes,
       badge: 'STRENGTH',
-      meta: `${minutes} Min • ${todayPlan.moves?.length || 0} moves`,
+      meta: `Not started · ${plannedMinutes} min planned`,
+      history: profile.history || [],
     };
   }
 
@@ -51,8 +55,10 @@ export async function loadTodayWorkoutSummary() {
       title: "You're done for today",
       description: todayPlan.status || 'Session logged.',
       minutes,
+      plannedMinutes: minutes,
       badge: 'DONE',
-      meta: minutes ? `${minutes} Min • Logged` : 'Session logged',
+      meta: minutes ? `${minutes} min logged` : 'Session logged',
+      history: profile.history || [],
     };
   }
 
@@ -61,7 +67,9 @@ export async function loadTodayWorkoutSummary() {
     title: 'Rest day',
     description: todayPlan.status || 'No extra work today.',
     minutes: 0,
+    plannedMinutes: 0,
     badge: 'REST',
     meta: 'Recovery day',
+    history: profile.history || [],
   };
 }

@@ -15,7 +15,7 @@ export default function InsightsRow({ percent, onStartNew }) {
       </GlassPanel>
       <View className="flex-1">
         <GlassCard className="min-h-[118px]" onPress={onStartNew}>
-          <View className="h-8 w-8 items-center justify-center rounded-full bg-black/10">
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-white/10">
             <Ionicons name="play" size={16} color="#FFFFFF" />
           </View>
           <Text className="mt-2.5 text-lg font-bold text-ink">View progress</Text>

@@ -41,13 +41,13 @@ export default function MusicScreen({ navigation }) {
     <GlassScreen>
       <View className="mb-2 flex-row items-center justify-between">
         <TouchableOpacity onPress={() => navigation.goBack()} className="p-2">
-          <Ionicons name="chevron-back" size={22} color="#1A1A1A" />
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-ink">Music</Text>
         <View className="w-9" />
       </View>
 
-      <Text className="text-[28px] font-extrabold text-ink">Your music, your app</Text>
+      <Text className="text-[28px] font-display uppercase text-ink">Your music, your app</Text>
       <Text className="mb-4 mt-2 leading-5 text-muted">
         Playback stays in the app you already pay for, so your library and account work as normal. Pick a service and
         we will open it when your workout starts; the workout keeps running here.
@@ -62,10 +62,10 @@ export default function MusicScreen({ navigation }) {
               key={item.id}
               onPress={() => choosePlatform(item.id)}
               className={`flex-row items-center gap-2 rounded-full border px-4 py-2.5 ${
-                active ? 'border-accent bg-accent/15' : 'border-black/10 bg-surface'
+                active ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface'
               }`}
             >
-              <Ionicons name={item.icon} size={16} color={active ? '#BA4A0C' : '#8E8E93'} />
+              <Ionicons name={item.icon} size={16} color={active ? '#FF6A00' : '#8E8E93'} />
               <Text className={`font-semibold ${active ? 'text-ink' : 'text-muted'}`}>{item.name}</Text>
             </TouchableOpacity>
           );
@@ -82,8 +82,8 @@ export default function MusicScreen({ navigation }) {
           placeholderTextColor="#6B6B70"
           autoCapitalize="none"
           autoCorrect={false}
-          className="mt-3 rounded-2xl border border-black/10 bg-white px-4 py-3 text-ink"
-          style={{ color: '#1A1A1A' }}
+          className="mt-3 rounded-2xl border border-white/10 bg-surface px-4 py-3 text-ink"
+          style={{ color: '#FFFFFF' }}
         />
         {message ? <Text className="mt-2 text-[13px] text-accent">{message}</Text> : null}
         <View className="mt-3 flex-row gap-2">
@@ -93,7 +93,7 @@ export default function MusicScreen({ navigation }) {
           {savedLink ? (
             <TouchableOpacity
               onPress={() => play(null)}
-              className="flex-1 items-center justify-center rounded-full border border-black/10 bg-surface py-3.5"
+              className="flex-1 items-center justify-center rounded-full border border-white/10 bg-surface py-3.5"
             >
               <Text className="font-bold text-ink">Open saved</Text>
             </TouchableOpacity>
@@ -105,7 +105,7 @@ export default function MusicScreen({ navigation }) {
       <GlassCard onPress={() => play(goalMusic.query)}>
         <View className="flex-row items-center gap-3">
           <View className="h-11 w-11 items-center justify-center rounded-full bg-accent/20">
-            <Ionicons name="play" size={18} color="#BA4A0C" />
+            <Ionicons name="play" size={18} color="#FF6A00" />
           </View>
           <View className="flex-1">
             <Text className="text-base font-bold text-ink">{goalMusic.label}</Text>
@@ -137,7 +137,7 @@ export default function MusicScreen({ navigation }) {
           <Switch
             value={Boolean(profile.musicAutoOpen)}
             onValueChange={setMusicAutoOpen}
-            trackColor={{ true: '#BA4A0C', false: '#E0E0E0' }}
+            trackColor={{ true: '#FF6A00', false: '#3A3A3A' }}
             thumbColor="#FFFFFF"
           />
         </View>

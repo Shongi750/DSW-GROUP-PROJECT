@@ -29,7 +29,7 @@ export default function ClipScreen() {
       <Text className="text-[11px] font-extrabold uppercase text-accent">
         {downloaded ? 'Saved offline' : clip.kind === 'technique' ? 'Technique' : 'Challenge'}
       </Text>
-      <Text className="mt-1 text-[26px] font-extrabold text-ink">{clip.title}</Text>
+      <Text className="mt-1 text-[26px] font-display uppercase text-ink">{clip.title}</Text>
       <Text className="mb-4 mt-2 leading-5 text-muted">{clip.blurb}</Text>
       <CookVideo video={{ youtubeId: clip.youtubeId, title: clip.title, channel: clip.creator }} mealTitle={clip.title} />
       <View className="mt-6">

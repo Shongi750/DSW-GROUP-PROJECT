@@ -21,9 +21,12 @@ import BarChart from '../components/BarChart';
 import AdminGate from '../components/AdminGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
+
 export default function AdminDashboardScreen({ navigation }) {
   const { colors, isDark } = useTheme();
   const { profile } = useApp();
+  const styles = createStyles(colors, isDark);
   const [workoutProfile, setWorkoutProfile] = useState({});
   const [invites, setInvites] = useState([]);
   const [decisions, setDecisions] = useState([]);
@@ -73,47 +76,49 @@ export default function AdminDashboardScreen({ navigation }) {
 
   return (
     <AdminGate navigation={navigation}>
-    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.kicker, { color: colors.brand }]}>Campus Admin</Text>
-        <Text style={[styles.title, { color: colors.text }]}>Usage & decisions</Text>
-        <Text style={[styles.copy, { color: colors.muted }]}>
-          {usage?.live
-            ? 'Campus bars use signed-up students in Firestore. Week bars stay sample until daily events are logged.'
-            : 'Sample campus numbers until students appear in Firestore. Power BI can take the same measures later.'}
+        <Text style={styles.kicker}>Campus Admin</Text>
+        <Text style={styles.title}>Usage & Decisions</Text>
+        <Text style={styles.copy}>
+          {usage?.weekLive
+            ? 'Week bars count students who opened the app this week. Campus bars use signed-up students.'
+            : usage?.live
+              ? 'Campus bars use signed-up students. Week bars stay sample until someone opens the app while signed in.'
+              : 'Sample campus numbers until students appear in Firestore.'}
         </Text>
 
         <View style={styles.kpiRow}>
-          <Kpi label="Active users" value={activeUsers} colors={colors} />
-          <Kpi label="Mentor ready" value={recommended.length} colors={colors} />
-          <Kpi label="Invites out" value={pendingInvites} colors={colors} />
+          <Kpi label="Active users" value={activeUsers} styles={styles} />
+          <Kpi label="Mentor ready" value={recommended.length} styles={styles} />
+          <Kpi label="Invites out" value={pendingInvites} styles={styles} />
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.card}>
           <BarChart
             title="Users this week"
             series={daySeries.map((item) => ({ label: item.label, value: item.users }))}
-            color="#E8722C"
+            color={colors.brand}
             track={isDark ? '#2E2A28' : '#F3E7DF'}
             labelColor={colors.text}
           />
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.card}>
           <BarChart
             title="Users by campus"
             series={campusSeries}
-            color="#0F766E"
+            color={isDark ? '#5EEAD4' : '#0F766E'}
             track={isDark ? '#2E2A28' : '#D7EDEA'}
             labelColor={colors.text}
           />
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.card}>
           <BarChart
             title="Module reach"
             series={moduleSeries}
-            color="#1F3A5F"
+            color={isDark ? '#93C5FD' : '#1F3A5F'}
             track={isDark ? '#2E2A28' : '#E4EAF2'}
             labelColor={colors.text}
           />
@@ -123,12 +128,12 @@ export default function AdminDashboardScreen({ navigation }) {
           style={styles.pipelineBtn}
           onPress={() => navigation.navigate('MentorPipeline')}
         >
-          <Ionicons name="sparkles-outline" size={18} color="#fff" />
+          <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
           <Text style={styles.pipelineText}>AI mentor recommendations</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.section, { color: colors.text }]}>Decisions</Text>
-        <Text style={[styles.copy, { color: colors.muted }]}>
+        <Text style={styles.section}>Decisions</Text>
+        <Text style={styles.copy}>
           Pin a call from the graphs — who to invite, which campus to push, what to ship next.
         </Text>
         <View style={styles.noteRow}>
@@ -137,7 +142,7 @@ export default function AdminDashboardScreen({ navigation }) {
             onChangeText={setNote}
             placeholder="e.g. Invite two APK mentors this week"
             placeholderTextColor={colors.muted}
-            style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+            style={styles.input}
           />
           <Pressable style={styles.addBtn} onPress={saveNote}>
             <Text style={styles.addText}>Add</Text>
@@ -146,7 +151,7 @@ export default function AdminDashboardScreen({ navigation }) {
         {decisions.map((item) => (
           <Pressable
             key={item.id}
-            style={[styles.decision, { backgroundColor: colors.overlay }]}
+            style={styles.decision}
             onPress={async () => setDecisions((await toggleDecision(item.id)).decisions)}
           >
             <Ionicons
@@ -154,7 +159,7 @@ export default function AdminDashboardScreen({ navigation }) {
               size={18}
               color={item.done ? '#16a34a' : colors.muted}
             />
-            <Text style={[styles.decisionText, { color: colors.text }, item.done && styles.decisionDone]}>
+            <Text style={[styles.decisionText, item.done && styles.decisionDone]}>
               {item.text}
             </Text>
           </Pressable>
@@ -165,44 +170,83 @@ export default function AdminDashboardScreen({ navigation }) {
   );
 }
 
-function Kpi({ label, value, colors }) {
+function Kpi({ label, value, styles }) {
   return (
-    <View style={[styles.kpi, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.kpiValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.kpiLabel, { color: colors.muted }]}>{label}</Text>
+    <View style={styles.kpi}>
+      <Text style={styles.kpiValue}>{value}</Text>
+      <Text style={styles.kpiLabel}>{label}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  body: { padding: 16, paddingBottom: 40 },
-  kicker: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6 },
-  title: { fontSize: 26, fontWeight: '800', marginTop: 4 },
-  copy: { fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 14 },
-  kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  kpi: { flex: 1, borderWidth: 1, borderRadius: 14, padding: 12 },
-  kpiValue: { fontSize: 22, fontWeight: '800' },
-  kpiLabel: { fontSize: 11, fontWeight: '700', marginTop: 4 },
-  card: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12 },
-  pipelineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#8C3A12',
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginTop: 4,
-    marginBottom: 22,
-  },
-  pipelineText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  section: { fontSize: 18, fontWeight: '800' },
-  noteRow: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 10 },
-  input: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  addBtn: { backgroundColor: '#E8722C', borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
-  addText: { color: '#fff', fontWeight: '800' },
-  decision: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10, padding: 12, marginBottom: 8 },
-  decisionText: { flex: 1, fontSize: 14, fontWeight: '600' },
-  decisionDone: { textDecorationLine: 'line-through', opacity: 0.6 },
-});
+function createStyles(colors, isDark) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.background },
+    body: { padding: 16, paddingBottom: 40 },
+    kicker: { ...display, fontSize: 13, color: colors.brand, textTransform: 'uppercase' },
+    title: { ...display, fontSize: 28, color: colors.text, marginTop: 4, textTransform: 'uppercase' },
+    copy: { fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 14, color: colors.muted },
+    kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+    kpi: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 12,
+    },
+    kpiValue: { ...display, fontSize: 24, color: colors.text },
+    kpiLabel: { fontSize: 11, fontWeight: '700', marginTop: 4, color: colors.muted },
+    card: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 12,
+    },
+    pipelineBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.brand,
+      borderRadius: 999,
+      paddingVertical: 14,
+      marginTop: 4,
+      marginBottom: 22,
+    },
+    pipelineText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+    section: { ...display, fontSize: 19, color: colors.text, textTransform: 'uppercase' },
+    noteRow: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 10 },
+    input: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.input,
+      color: colors.text,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+    },
+    addBtn: {
+      backgroundColor: colors.brand,
+      borderRadius: 999,
+      paddingHorizontal: 16,
+      justifyContent: 'center',
+    },
+    addText: { color: '#FFFFFF', fontWeight: '800' },
+    decision: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      borderRadius: 10,
+      padding: 12,
+      marginBottom: 8,
+      backgroundColor: colors.overlay,
+    },
+    decisionText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
+    decisionDone: { textDecorationLine: 'line-through', opacity: 0.6 },
+  });
+}

@@ -1,61 +1,20 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updateProfile as updateAuthProfile,
-} from 'firebase/auth';
-import { getFirebaseAuth, isFirebaseConfigured, missingFirebaseKeys } from '../lib/firebase';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { useApp as useMainApp } from '../../../context/AppContext';
 import { friendlyAuthError } from '../../../lib/authErrors';
-import { assertUjStudentAccount } from '../../../lib/ujEmail';
-
-const GUEST_KEY = 'workoutapp.guest.v1';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [guest, setGuest] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
+  const main = useMainApp();
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-
-    AsyncStorage.getItem(GUEST_KEY)
-      .then((value) => {
-        if (active && value === 'true' && !isFirebaseConfigured) setGuest(true);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!isFirebaseConfigured && active) setAuthReady(true);
-      });
-
-    if (!isFirebaseConfigured) return () => {
-      active = false;
-    };
-
-    // If Firebase cannot answer (bad keys, no network on a cold start), fall through to the
-    // sign-in screen instead of leaving the user on a spinner forever.
-    const failsafe = setTimeout(() => {
-      if (active) setAuthReady(true);
-    }, 8000);
-
-    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (nextUser) => {
-      if (!active) return;
-      setUser(nextUser || null);
-      setAuthReady(true);
-    });
-
-    return () => {
-      active = false;
-      clearTimeout(failsafe);
-      unsubscribe();
-    };
-  }, []);
+  const user = main.user
+    ? {
+        uid: main.user.id,
+        email: main.user.email || main.profile?.email || '',
+        displayName: main.profile?.name || '',
+      }
+    : null;
 
   const run = useCallback(async (action) => {
     setBusy(true);
@@ -71,54 +30,23 @@ export function AuthProvider({ children }) {
 
   const signUp = useCallback(
     ({ email, password, name }) =>
-      run(async () => {
-        const account = assertUjStudentAccount({ email });
-        const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), account.email, password);
-        try {
-          if (name?.trim()) await updateAuthProfile(credential.user, { displayName: name.trim() });
-        } catch {}
-        await AsyncStorage.removeItem(GUEST_KEY);
-        setGuest(false);
-        setUser(credential.user);
-      }),
-    [run]
+      run(() => main.register({ email, password, name, studentNumber: '' })),
+    [run, main]
   );
 
   const signIn = useCallback(
-    ({ email, password }) =>
-      run(async () => {
-        const account = assertUjStudentAccount({ email });
-        const credential = await signInWithEmailAndPassword(getFirebaseAuth(), account.email, password);
-        await AsyncStorage.removeItem(GUEST_KEY);
-        setGuest(false);
-        setUser(credential.user);
-      }),
-    [run]
+    ({ email, password }) => run(() => main.login({ email, password })),
+    [run, main]
   );
 
   const resetPassword = useCallback(
-    (email) =>
-      run(async () => {
-        const account = assertUjStudentAccount({ email });
-        await sendPasswordResetEmail(getFirebaseAuth(), account.email);
-      }),
-    [run]
+    (email) => run(() => main.resetPassword(email)),
+    [run, main]
   );
 
-  const signOut = useCallback(
-    () =>
-      run(async () => {
-        await firebaseSignOut(getFirebaseAuth());
-        await AsyncStorage.removeItem(GUEST_KEY);
-        setGuest(false);
-      }),
-    [run]
-  );
+  const signOut = useCallback(() => run(() => main.logout()), [run, main]);
 
-  const continueAsGuest = useCallback(async () => {
-    await AsyncStorage.setItem(GUEST_KEY, 'true');
-    setGuest(true);
-  }, []);
+  const continueAsGuest = useCallback(async () => {}, []);
 
   const value = useMemo(
     () => ({
@@ -126,18 +54,18 @@ export function AuthProvider({ children }) {
       uid: user?.uid || null,
       email: user?.email || null,
       displayName: user?.displayName || null,
-      guest,
-      authReady,
+      guest: false,
+      authReady: !main.booting,
       busy,
-      authAvailable: isFirebaseConfigured,
-      missingFirebaseKeys,
+      authAvailable: Boolean(user),
+      missingFirebaseKeys: [],
       signUp,
       signIn,
       signOut,
       resetPassword,
       continueAsGuest,
     }),
-    [user, guest, authReady, busy, signUp, signIn, signOut, resetPassword, continueAsGuest]
+    [user, main.booting, busy, signUp, signIn, signOut, resetPassword, continueAsGuest]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
