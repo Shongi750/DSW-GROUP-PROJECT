@@ -4,24 +4,14 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const COLORS = {
-  background: '#FFFFFF',       // Clean unified light background
-  surface: '#F8F9FA',          // Soft card surface
-  surfaceLight: '#EEEEEE',     // Secondary card surface
-  primary: '#BA4A0C',          // Signature vibrant orange
+  background: '#FFFFFF',
+  surface: '#F8F9FA',
+  primary: '#BA4A0C',
   primaryLight: '#FCEFE9',
   textDark: '#1A1A1A',
   textLight: '#666666',
   border: '#EAEAEA',
 };
-
-const DEMO_GIFS = [
-  'https://media.giphy.com/media/3o6ZsS8MR8Xm36hJII/giphy.gif',
-  'https://media.giphy.com/media/1xONa28nLgI6r3X2w8/giphy.gif',
-  'https://media.giphy.com/media/xT8qBvH1pAhtfLlC2k/giphy.gif',
-  'https://media.giphy.com/media/l0HlRnAWXxn0MhOBK/giphy.gif',
-  'https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif',
-  'https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif'
-];
 
 export default function ActiveWorkoutSessionScreen({ route, navigation }) {
   const { workout } = route.params || {};
@@ -30,23 +20,7 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
   const [totalWorkoutSeconds, setTotalWorkoutSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
-  if (!workout || !workout.exercises || workout.exercises.length === 0) {
-      return (
-        <SafeAreaView style={styles.container}>
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Workout data is missing or empty.</Text>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.errorBtn}>
-              <Text style={styles.errorBtnText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      );
-  }
-
-  const activeExercise = workout.exercises[currentIndex];
-  const isLastExercise = currentIndex === workout.exercises.length - 1;
-
-  // Track overall session duration silently in the background
+  // Track overall session duration
   useEffect(() => {
     let interval = setInterval(() => {
       if (!isSaving) {
@@ -55,6 +29,22 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
     }, 1000);
     return () => clearInterval(interval);
   }, [isSaving]);
+
+  if (!workout || !workout.exercises || workout.exercises.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Workout data is missing or empty.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.errorBtn}>
+            <Text style={styles.errorBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const activeExercise = workout.exercises[currentIndex];
+  const isLastExercise = currentIndex === workout.exercises.length - 1;
 
   const formatTime = (totalSeconds) => {
     if (!totalSeconds) return "00:00";
@@ -65,15 +55,13 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
 
   const handleFinishWorkout = async () => {
     setIsSaving(true);
-    try {
-      setTimeout(() => {
-        setIsSaving(false);
-        navigation.goBack();
-      }, 1000);
-    } catch (error) {
-      Alert.alert('Error', 'Could not save your workout.');
+    setTimeout(() => {
       setIsSaving(false);
-    }
+      navigation.navigate('Progress', {
+        screen: 'ProgressDashboard',
+        params: { completedWorkout: workout }
+      });
+    }, 800);
   };
 
   const handleNext = () => {
@@ -86,7 +74,7 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
 
   if (!activeExercise) return null;
 
-  const currentGif = activeExercise.gifUrl || DEMO_GIFS[currentIndex % DEMO_GIFS.length];
+  const exerciseImageUrl = activeExercise.gifUrl || 'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Pushup/images/0.jpg';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -112,14 +100,14 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
       </View>
 
       <View style={styles.content}>
-        {/* Visual Exercise Card / GIF Container */}
+        {/* Visual Exercise Demonstration Card with Enforced Dimensions */}
         <View style={styles.imageWrapper}>
           <Image 
-            source={{ uri: currentGif }} 
-            style={styles.gifImage} 
+            source={{ uri: exerciseImageUrl }} 
+            style={styles.exerciseImageStyle} 
             contentFit="cover" 
-            transition={500} 
           />
+
           <View style={styles.progressPill}>
             <Text style={styles.progressText}>
               Step {currentIndex + 1} of {workout.exercises.length}
@@ -138,13 +126,11 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
             {activeExercise.description || 'Maintain steady controlled breathing and full range of motion.'}
           </Text>
 
-          {/* Sets & Reps Focus Card */}
           <View style={styles.repsCard}>
-            <Text style={styles.repsCardLabel}>TARGET</Text>
+            <Text style={styles.repsCardLabel}>TARGET REQUIREMENTS</Text>
             <Text style={styles.repsCardValue}>
               {activeExercise.sets ? `${activeExercise.sets} Sets` : ''} 
               {activeExercise.reps ? ` • ${activeExercise.reps} Reps` : ''}
-              {!activeExercise.sets && !activeExercise.reps ? 'Complete at your own pace' : ''}
             </Text>
           </View>
         </View>
@@ -168,7 +154,7 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
       {isSaving && (
         <View style={styles.savingOverlay}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.savingText}>Saving Workout...</Text>
+          <Text style={styles.savingText}>Saving Session...</Text>
         </View>
       )}
     </SafeAreaView>
@@ -177,7 +163,6 @@ export default function ActiveWorkoutSessionScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  
   headerRow: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
@@ -188,24 +173,16 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border
   },
   quitButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.border
   },
   quitButtonText: { fontSize: 14, color: COLORS.textDark, fontWeight: '700' },
-  
   sessionBadge: {
     backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.primary
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: COLORS.primary
   },
   sessionBadgeText: { color: COLORS.primary, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   headerTimer: { fontSize: 15, fontWeight: '800', color: COLORS.textDark, fontVariant: ['tabular-nums'] },
@@ -216,32 +193,36 @@ const styles = StyleSheet.create({
     width: '100%', 
     height: 220, 
     borderRadius: 20, 
-    overflow: 'hidden',
+    overflow: 'hidden', 
     position: 'relative',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    backgroundColor: '#F8F9FA', 
+    borderWidth: 1, 
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  gifImage: { width: '100%', height: '100%' },
-  
-  progressPill: {
+  exerciseImageStyle: { 
+    width: '100%', 
+    height: '100%',
     position: 'absolute',
-    top: 12,
-    left: 12,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  progressPill: {
+    position: 'absolute', top: 12, left: 12,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    zIndex: 2,
   },
   progressText: { color: '#FFFFFF', fontWeight: '700', fontSize: 11, letterSpacing: 0.5 },
 
   exerciseInfoBox: { alignItems: 'center' },
   tagContainer: { 
     backgroundColor: COLORS.primaryLight, 
-    paddingHorizontal: 10, 
-    paddingVertical: 4, 
-    borderRadius: 6, 
-    marginBottom: 6,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 6,
   },
   tagText: { color: COLORS.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   
@@ -249,40 +230,24 @@ const styles = StyleSheet.create({
   exerciseSubtitle: { fontSize: 12, color: COLORS.textLight, textAlign: 'center', paddingHorizontal: 10, marginBottom: 14 },
 
   repsCard: {
-    width: '100%',
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border
+    width: '100%', backgroundColor: COLORS.surface,
+    borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16,
+    alignItems: 'center', borderWidth: 1, borderColor: COLORS.border
   },
   repsCardLabel: { fontSize: 10, fontWeight: '800', color: COLORS.textLight, letterSpacing: 1, marginBottom: 2 },
   repsCardValue: { fontSize: 16, fontWeight: '800', color: COLORS.textDark },
 
   controlsRow: { flexDirection: 'row' },
   controlBtn: { 
-    flex: 1, 
-    paddingVertical: 16, 
-    borderRadius: 16, 
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2
+    flex: 1, paddingVertical: 16, borderRadius: 16, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2
   },
   nextBtn: { backgroundColor: COLORS.primary },
   nextBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
 
   upNextBox: {
-    backgroundColor: COLORS.surface,
-    padding: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border
+    backgroundColor: COLORS.surface, padding: 12, borderRadius: 14,
+    alignItems: 'center', borderWidth: 1, borderColor: COLORS.border
   },
   upNextLabel: { fontSize: 10, color: COLORS.textLight, fontWeight: '800', letterSpacing: 1, marginBottom: 2 },
   upNextTitle: { fontSize: 13, fontWeight: '700', color: COLORS.textDark },
@@ -295,8 +260,7 @@ const styles = StyleSheet.create({
   savingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.9)',
-    justifyContent: 'center',
-    alignItems: 'center'
+    justifyContent: 'center', alignItems: 'center'
   },
   savingText: { marginTop: 12, fontSize: 16, fontWeight: '800', color: COLORS.primary, letterSpacing: 1 }
 });
