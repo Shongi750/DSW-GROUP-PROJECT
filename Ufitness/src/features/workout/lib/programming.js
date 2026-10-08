@@ -70,6 +70,7 @@ export function buildProgram(profile = {}) {
   const daysPerWeek = Math.min(6, Math.max(2, profile.daysPerWeek || 3));
   const split = getSplit(goal.id, daysPerWeek);
   const experience = profile.experience || 'new';
+  const planBoost = Math.max(0, Math.min(2, Number(profile.planBoost) || 0));
 
   const days = split.days.map((templateId, index) => buildDay(templateId, index, { goal, tier, injuries }));
 
@@ -78,6 +79,7 @@ export function buildProgram(profile = {}) {
     goal,
     tier,
     experience,
+    planBoost,
     daysPerWeek,
     weeks: MESOCYCLE_WEEKS,
     splitName: split.name,
@@ -140,6 +142,7 @@ export function sessionForWeek(program, weekIndex, dayIndex) {
         1,
         baseSets +
           progressionSets +
+          (program.planBoost || 0) +
           experienceSetBonus(program.experience, block.main) +
           frequencySetBonus(program.daysPerWeek, block.main)
       )

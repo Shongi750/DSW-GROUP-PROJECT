@@ -1,3 +1,9 @@
+/**
+ * AdminDashboardScreen — campus admin KPIs and decision log.
+ * Numbers come from Supabase (admin_usage_summary + list_students). No sample data:
+ * when nothing is recorded yet we say so instead of showing made-up bars.
+ * Also lists chat reports (chat_reports) so the admin can follow up.
+ */
 import React, { useCallback, useState } from 'react';
 import {
   View,
@@ -13,10 +19,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
 import { useApp } from '../../../context/AppContext';
-import { USAGE_BY_CAMPUS, USAGE_BY_DAY, USAGE_BY_MODULE, SEED_STUDENTS } from '../data/usageSeed';
 import { loadLiveUsage } from '../lib/liveUsage';
 import { mergeCloudStudents, mergeLiveStudent, recommendMentors } from '../lib/recommendMentors';
 import { addDecision, loadAdminState, toggleDecision } from '../lib/adminStore';
+import { loadSentInvites } from '../../mentors/lib/mentorInvites';
+import { loadReports, loadSuspendedIds } from '../../../lib/moderation';
+import { openReportCount, sortReports } from '../../../lib/moderationRules';
+import ReportCard from '../components/ReportCard';
 import BarChart from '../components/BarChart';
 import AdminGate from '../components/AdminGate';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -32,7 +41,11 @@ export default function AdminDashboardScreen({ navigation }) {
   const [decisions, setDecisions] = useState([]);
   const [note, setNote] = useState('');
   const [usage, setUsage] = useState(null);
+  const [reports, setReports] = useState({ rows: [], error: '' });
+  const [suspendedIds, setSuspendedIds] = useState([]);
+  const [showHandled, setShowHandled] = useState(false);
 
+  // Pull local workout profile, admin invites/decisions, and optional live usage.
   const refresh = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem('workoutapp.profile.v1');
@@ -41,9 +54,12 @@ export default function AdminDashboardScreen({ navigation }) {
       setWorkoutProfile({});
     }
     const admin = await loadAdminState();
-    setInvites(admin.invites);
     setDecisions(admin.decisions);
+    const sent = await loadSentInvites();
+    setInvites(sent.rows);
     setUsage(await loadLiveUsage());
+    setReports(await loadReports());
+    setSuspendedIds(await loadSuspendedIds());
   }, []);
 
   useFocusEffect(
@@ -52,20 +68,22 @@ export default function AdminDashboardScreen({ navigation }) {
     }, [refresh])
   );
 
-  const students = mergeLiveStudent(
-    mergeCloudStudents(SEED_STUDENTS, usage?.students || []),
-    profile,
-    workoutProfile
-  );
-  const recommended = recommendMentors(
-    students,
-    invites.filter((row) => row.status !== 'declined').map((row) => row.studentId)
-  );
-  const campusSeries = usage?.byCampus || USAGE_BY_CAMPUS;
-  const daySeries = usage?.byDay || USAGE_BY_DAY;
-  const moduleSeries = usage?.byModule || USAGE_BY_MODULE;
-  const activeUsers = usage?.activeUsers ?? campusSeries.reduce((sum, item) => sum + item.users, 0);
+  const students = mergeLiveStudent(mergeCloudStudents([], usage?.students || []), profile, workoutProfile);
+  const alreadyMentors = (usage?.students || [])
+    .filter((row) => Array.isArray(row.roles) && row.roles.includes('mentor'))
+    .map((row) => row.id);
+  const recommended = recommendMentors(students, [
+    ...invites.filter((row) => row.status !== 'declined').map((row) => row.studentId),
+    ...alreadyMentors,
+  ]);
   const pendingInvites = invites.filter((row) => row.status === 'pending').length;
+  const hasStudents = (usage?.byCampus || []).some((item) => item.value > 0);
+
+  // After an admin action, reload reports + suspensions (cheap; keeps buttons right).
+  const refreshModeration = async () => {
+    setReports(await loadReports());
+    setSuspendedIds(await loadSuspendedIds());
+  };
 
   const saveNote = async () => {
     if (!note.trim()) return;
@@ -81,47 +99,80 @@ export default function AdminDashboardScreen({ navigation }) {
         <Text style={styles.kicker}>Campus Admin</Text>
         <Text style={styles.title}>Usage & Decisions</Text>
         <Text style={styles.copy}>
-          {usage?.weekLive
-            ? 'Week bars count students who opened the app this week. Campus bars use signed-up students.'
-            : usage?.live
-              ? 'Campus bars use signed-up students. Week bars stay sample until someone opens the app while signed in.'
-              : 'Sample campus numbers until students appear in Firestore.'}
+          Real numbers from Supabase: signed-up students, who opened the app each day, and which
+          features they used (last 7 days).
         </Text>
 
+        {usage && usage.cloud !== 'ok' ? (
+          <View style={styles.banner}>
+            <Ionicons name="cloud-offline-outline" size={18} color="#F87171" />
+            <Text style={styles.bannerText}>{CLOUD_MESSAGES[usage.cloud] || CLOUD_MESSAGES.error}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.kpiRow}>
-          <Kpi label="Active users" value={activeUsers} styles={styles} />
+          <Kpi label="Students" value={usage ? usage.totalStudents : '–'} styles={styles} />
+          <Kpi label="New (7 days)" value={usage ? usage.signups7d : '–'} styles={styles} />
+          <Kpi label="Active (7 days)" value={usage ? usage.active7d : '–'} styles={styles} />
+        </View>
+        <View style={styles.kpiRow}>
           <Kpi label="Mentor ready" value={recommended.length} styles={styles} />
           <Kpi label="Invites out" value={pendingInvites} styles={styles} />
+          <Kpi label="Open reports" value={openReportCount(reports.rows)} styles={styles} />
         </View>
 
         <View style={styles.card}>
-          <BarChart
-            title="Users this week"
-            series={daySeries.map((item) => ({ label: item.label, value: item.users }))}
-            color={colors.brand}
-            track={isDark ? '#2E2A28' : '#F3E7DF'}
-            labelColor={colors.text}
-          />
+          {usage?.hasUsage ? (
+            <BarChart
+              title="Active users per day"
+              series={usage.byDay.map((item) => ({ label: item.label, value: item.users }))}
+              color={colors.brand}
+              track={isDark ? '#2E2A28' : '#F3E7DF'}
+              labelColor={colors.text}
+            />
+          ) : (
+            <EmptyChart
+              title="Active users per day"
+              copy="No app opens recorded in the last 7 days yet. Students appear here after they sign in on the updated app."
+              styles={styles}
+            />
+          )}
         </View>
 
         <View style={styles.card}>
-          <BarChart
-            title="Users by campus"
-            series={campusSeries}
-            color={isDark ? '#5EEAD4' : '#0F766E'}
-            track={isDark ? '#2E2A28' : '#D7EDEA'}
-            labelColor={colors.text}
-          />
+          {hasStudents ? (
+            <BarChart
+              title="Students by campus"
+              series={usage.byCampus}
+              color={isDark ? '#5EEAD4' : '#0F766E'}
+              track={isDark ? '#2E2A28' : '#D7EDEA'}
+              labelColor={colors.text}
+            />
+          ) : (
+            <EmptyChart
+              title="Students by campus"
+              copy="No students have finished setup yet (or they chose not to show their campus)."
+              styles={styles}
+            />
+          )}
         </View>
 
         <View style={styles.card}>
-          <BarChart
-            title="Module reach"
-            series={moduleSeries}
-            color={isDark ? '#93C5FD' : '#1F3A5F'}
-            track={isDark ? '#2E2A28' : '#E4EAF2'}
-            labelColor={colors.text}
-          />
+          {usage?.hasUsage ? (
+            <BarChart
+              title="Feature reach (7 days)"
+              series={usage.byModule}
+              color={isDark ? '#93C5FD' : '#1F3A5F'}
+              track={isDark ? '#2E2A28' : '#E4EAF2'}
+              labelColor={colors.text}
+            />
+          ) : (
+            <EmptyChart
+              title="Feature reach (7 days)"
+              copy="Counts students who opened Meals, Workout, Community or Mentors. Nothing recorded yet."
+              styles={styles}
+            />
+          )}
         </View>
 
         <TouchableOpacity
@@ -131,6 +182,32 @@ export default function AdminDashboardScreen({ navigation }) {
           <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
           <Text style={styles.pipelineText}>AI mentor recommendations</Text>
         </TouchableOpacity>
+
+        <Text style={styles.section}>Reports</Text>
+        <Text style={styles.copy}>
+          Messages and posts students reported (open first). Only Campus Admin can see this list.
+          Every action is saved in the moderation log.
+        </Text>
+        {reports.error ? <Text style={styles.copy}>{reports.error}</Text> : null}
+        {!reports.error && !openReportCount(reports.rows) ? (
+          <Text style={styles.copy}>No open reports. Nice and quiet.</Text>
+        ) : null}
+        {reports.rows.length > openReportCount(reports.rows) ? (
+          <Pressable onPress={() => setShowHandled((value) => !value)}>
+            <Text style={styles.toggle}>{showHandled ? 'Hide handled reports' : 'Show handled reports'}</Text>
+          </Pressable>
+        ) : null}
+        {sortReports(reports.rows)
+          .filter((item) => showHandled || item.status === 'open')
+          .map((item) => (
+            <ReportCard
+              key={item.id}
+              report={item}
+              colors={colors}
+              suspendedIds={suspendedIds}
+              onChanged={refreshModeration}
+            />
+          ))}
 
         <Text style={styles.section}>Decisions</Text>
         <Text style={styles.copy}>
@@ -170,6 +247,21 @@ export default function AdminDashboardScreen({ navigation }) {
   );
 }
 
+const CLOUD_MESSAGES = {
+  local: 'Supabase keys are missing in .env, so there is no live data on this build.',
+  missing: 'Cloud not set up: run supabase/schema.sql (or the 2026-10-08 migration) in the Supabase SQL editor.',
+  error: 'Could not load live usage right now. Check your connection and that this account is a campus admin.',
+};
+
+function EmptyChart({ title, copy, styles }) {
+  return (
+    <View>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyCopy}>{copy}</Text>
+    </View>
+  );
+}
+
 function Kpi({ label, value, styles }) {
   return (
     <View style={styles.kpi}>
@@ -186,7 +278,28 @@ function createStyles(colors, isDark) {
     kicker: { ...display, fontSize: 13, color: colors.brand, textTransform: 'uppercase' },
     title: { ...display, fontSize: 28, color: colors.text, marginTop: 4, textTransform: 'uppercase' },
     copy: { fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 14, color: colors.muted },
-    kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+    kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+    banner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 12,
+      backgroundColor: 'rgba(248,113,113,0.12)',
+      borderWidth: 1,
+      borderColor: 'rgba(248,113,113,0.35)',
+    },
+    bannerText: { flex: 1, fontSize: 13, lineHeight: 18, color: colors.text },
+    emptyTitle: {
+      ...display,
+      fontSize: 15,
+      color: colors.text,
+      textTransform: 'uppercase',
+      marginTop: 8,
+      marginBottom: 6,
+    },
+    emptyCopy: { fontSize: 13, lineHeight: 19, color: colors.muted },
     kpi: {
       flex: 1,
       borderWidth: 1,
@@ -248,5 +361,6 @@ function createStyles(colors, isDark) {
     },
     decisionText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
     decisionDone: { textDecorationLine: 'line-through', opacity: 0.6 },
+    toggle: { fontSize: 13, fontWeight: '700', color: colors.brand, marginBottom: 10 },
   });
 }

@@ -1,10 +1,12 @@
-// screens/MatchedBuddiesScreen.js
-// FR-35: allow matched buddies to view each other's basic fitness information
-
+/**
+ * MatchedBuddiesScreen (FR-35) — accepted buddies and shared profile fields.
+ * Chat via onMessage; unfriendBuddy removes the match using the stored requestId.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { getMatchedBuddies, unfriendBuddy } from '../services/buddyService';
 import { useTheme } from '../../../context/ThemeContext';
+import { SkeletonCard } from '../../../components/Skeleton';
 
 const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
@@ -30,8 +32,9 @@ export default function MatchedBuddiesScreen({ currentStudent, refreshKey, onMes
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.brand} />
+      <View style={{ paddingTop: 16 }}>
+        <SkeletonCard />
+        <SkeletonCard />
       </View>
     );
   }
@@ -46,7 +49,7 @@ export default function MatchedBuddiesScreen({ currentStudent, refreshKey, onMes
         contentContainerStyle={{ paddingBottom: 24 }}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            You haven't matched with a buddy yet. Go find one!
+            You haven’t matched with a buddy yet. Go find one!
           </Text>
         }
         renderItem={({ item }) => (

@@ -1,5 +1,15 @@
+/**
+ * MealPlannerScreen — Meals tab (Today · Plan · Shop).
+ *
+ * Flow for defense:
+ * 1. Load saved plan from device storage + SA food catalog (Open Food Facts / offline staples).
+ * 2. buildWeekPlan picks recipes for the weekly budget and diet filters.
+ * 3. overlayWeekMeals applies student swaps and custom “cook your own” plates.
+ * 4. Groceries auto-build from the visible week; Shop tab prices them by store.
+ * 5. Today tab logs eaten meals (local) and can share a plate to Community.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +47,13 @@ import { applyStoreList, STORE_FILTERS, storeLabel } from '../lib/stores';
 import { loadEatenToday, logEatenMeal } from '../lib/eaten';
 import { dayMacroPlan, mealProtein, targetsForGoal } from '../lib/nutritionTargets';
 import { scaleMeal } from '../lib/portions';
+import { SkeletonCard } from '../../../components/Skeleton';
+import DownloadButton from '../../../components/DownloadButton';
+import { useDownload } from '../../../lib/downloads/useDownload';
+import { getDownload } from '../../../lib/downloads/downloadsStore';
+import { downloadedOnLabel, pickOfflineSource } from '../../../lib/downloads/downloadsCore';
+import { isOnline } from '../../../lib/autoSync';
+import { downloadMealPlan, offlineCatalog, planRefId } from '../lib/mealDownloads';
 
 const CADENCE_IDS = ['daily', 'weekly', 'monthly'];
 const TABS = [
@@ -45,11 +62,31 @@ const TABS = [
   { id: 'shop', label: 'Shop' },
 ];
 
+/** Unique id for “I ate this” — one row per day + meal slot + recipe. */
 function mealLogId(meal, dayId) {
   return `${dayId}-${meal.slot}-${meal.recipeId || meal.id}`;
 }
 
-export default function MealPlannerScreen({ onOpenProfile }) {
+/** Key for swap/custom overrides in state (e.g. mon:breakfast). */
+function slotKey(dayId, slot) {
+  return `${dayId}:${slot}`;
+}
+
+/** Human-readable line under Plan tab — where meals and prices come from. */
+function buildSourceLabel(plan) {
+  if (!plan) return '';
+  const foods =
+    plan.source === 'openfoodfacts'
+      ? `SA campus foods · ${plan.liveCount} products`
+      : 'SA staple meals';
+  const prices =
+    plan.priceSource === 'loyaltyhub' || plan.priceCount
+      ? 'Live shelf prices where available'
+      : 'Estimated prices until live shelf quotes load';
+  return `${foods} · ${prices}`;
+}
+
+export default function MealPlannerScreen({ onOpenProfile, openDownload, openAt }) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { user, profile, updateFields } = useApp();
@@ -76,9 +113,15 @@ export default function MealPlannerScreen({ onOpenProfile }) {
   const [groceries, setGroceries] = useState([]);
   const [hydrated, setHydrated] = useState(false);
   const [eaten, setEaten] = useState({ items: [], kcal: 0, protein: 0, carbs: 0 });
+  // Downloads: a downloaded plan / grocery list shown instead of the live one (read from Profile → Downloads).
+  const [viewing, setViewing] = useState(null); // { kind, entry, data }
+  const [viewGroceries, setViewGroceries] = useState([]);
+  const [recipeView, setRecipeView] = useState(null); // downloaded recipe opened from Downloads
+  const [catalogNote, setCatalogNote] = useState('');
 
   const uid = user?.id || profile?.userId;
 
+  // --- Reload what the student already ate today (local storage) ---
   const reloadEaten = useCallback(() => {
     loadEatenToday(uid).then(setEaten);
   }, [uid]);
@@ -89,6 +132,7 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     }, [reloadEaten]),
   );
 
+  // --- Restore last session: budget, goal, swaps, grocery list ---
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -127,14 +171,29 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     }
   }, [profile?.foodBudgetAmount]);
 
+  // --- SA product catalog (network with offline fallback) ---
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Offline-first: no connection → skip the fetch and use the downloaded plan's foods/prices.
+      let live = null;
+      if (isOnline()) {
+        try {
+          live = await fetchSaStaples();
+        } catch {
+          live = null;
+        }
+      }
+      const saved = live && isOnline() ? null : await offlineCatalog();
+      const choice = pickOfflineSource({ online: isOnline(), liveOk: Boolean(live), hasDownload: Boolean(saved) });
       try {
-        const data = await fetchSaStaples();
-        if (alive) setCatalog(data);
-      } catch {
-        if (alive) {
+        if (!alive) return;
+        if (choice === 'live') setCatalog(live);
+        else if (choice === 'download') {
+          setCatalog(saved.catalog);
+          const why = isOnline() ? 'Food catalog unreachable' : 'Offline';
+          setCatalogNote(`${why} · foods and prices from your download (${downloadedOnLabel(saved.savedAt).toLowerCase()})`);
+        } else {
           setCatalog(fallbackSaStaples());
           Alert.alert('Using offline SA staples', 'Could not reach Open Food Facts. Meals still use South African foods.');
         }
@@ -162,6 +221,28 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     });
   }, [plan, customByKey, swapByKey, catalog, dietFilters]);
 
+  // Open an item from Profile → Downloads in this screen.
+  useEffect(() => {
+    if (!openDownload) return undefined;
+    let alive = true;
+    const [kind, ...rest] = String(openDownload).split(':');
+    getDownload(kind, rest.join(':')).then((saved) => {
+      if (!alive || !saved) return;
+      if (kind === 'recipe') {
+        setRecipeView(saved);
+        setSelectedMeal(saved.data.meal);
+        return;
+      }
+      setViewing({ kind, entry: saved.entry, data: saved.data });
+      setViewGroceries(saved.data.groceries || saved.data.items || []);
+      setTab(kind === 'grocery' ? 'shop' : 'plan');
+      if (kind === 'mealPlan') setSelectedDay(todayDayId());
+    });
+    return () => {
+      alive = false;
+    };
+  }, [openDownload, openAt]);
+
   useEffect(() => {
     if (!hydrated || !plan || !catalog) return;
     const derived = groceriesFromMeals(mealsByDay, catalog.products);
@@ -186,28 +267,42 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     return () => clearTimeout(timer);
   }, [hydrated, budget, goal, dietFilters, selectedDay, customByKey, swapByKey, storeId, cadence, groceries]);
 
+  // What's on screen: the live plan, or the downloaded copy being viewed.
+  const viewData = viewing ? viewing.data : null;
+  const shownMealsByDay = viewing?.kind === 'mealPlan' ? viewData.mealsByDay || {} : mealsByDay;
+  const shownGroceries = viewing ? viewGroceries : groceries;
+  const setShownGroceries = viewing ? setViewGroceries : setGroceries;
+  const shownStoreId = viewData?.storeId || storeId;
+  const shownCadence = viewData?.cadence || cadence;
+  const shownBudget = viewing?.kind === 'mealPlan' ? viewData.budget : budget;
+  const shownProducts = viewData
+    ? { ...(catalog?.products || {}), ...(viewData.catalog?.products || viewData.products || {}) }
+    : catalog?.products;
+  const planDl = useDownload('mealPlan', planRefId(budget, goal));
+
   const todayId = todayDayId();
   const activeDayId = tab === 'today' ? todayId : selectedDay;
   const day = DAYS.find((item) => item.id === activeDayId) || DAYS[0];
-  const meals = mealsByDay[activeDayId] || [];
+  const meals = shownMealsByDay[activeDayId] || [];
   const nextMeal = meals.find((m) => !eaten.items.some((item) => item.id === mealLogId(m, activeDayId))) || meals[0] || null;
-  const priced = useMemo(() => applyStoreList(groceries, storeId), [groceries, storeId]);
+  const priced = useMemo(() => applyStoreList(shownGroceries, shownStoreId), [shownGroceries, shownStoreId]);
   const basketTotal = priced
     .filter((item) => item.needed !== false)
     .reduce((sum, item) => sum + Number(item.price || 0), 0);
-  const overBudget = basketTotal > budget;
-  const remaining = Math.max(0, budget - basketTotal);
+  const overBudget = basketTotal > shownBudget;
+  const remaining = Math.max(0, shownBudget - basketTotal);
   const targets = targetsForGoal(goal);
   const planned = useMemo(() => dayMacroPlan(mealsByDay[todayId] || [], goal), [mealsByDay, todayId, goal]);
   const eatenIds = useMemo(() => new Set((eaten.items || []).map((item) => item.id)), [eaten.items]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || viewing) return; // a downloaded copy never changes the live budget
     const left = remainingAfterGrocery(budget, basketTotal);
     if (profile.weeklyFoodBudget === budget && profile.foodBudgetRemaining === left) return;
     updateFields({ weeklyFoodBudget: budget, foodBudgetRemaining: left });
-  }, [hydrated, budget, basketTotal]);
+  }, [hydrated, budget, basketTotal, viewing]);
 
+  /** Cycle to another recipe in the same slot; clears a custom plate on that slot. */
   const swapMeal = (meal) => {
     const next = nextSlotMeal(budget, meal.slot, meal.recipeId, dietFilters);
     if (!next) {
@@ -218,15 +313,15 @@ export default function MealPlannerScreen({ onOpenProfile }) {
       return;
     }
     const dayId = meal.dayId || activeDayId;
-    const key = `${dayId}:${meal.slot}`;
-    const plannedMeal = plan?.mealsByDay?.[dayId]?.find((item) => item.slot === meal.slot);
+    const key = slotKey(dayId, meal.slot);
+    const defaultRecipeId = plan?.mealsByDay?.[dayId]?.find((item) => item.slot === meal.slot)?.recipeId;
     setCustomByKey((current) => {
       const copy = { ...current };
       delete copy[key];
       return copy;
     });
     setSwapByKey((current) => {
-      if (plannedMeal && next.id === plannedMeal.recipeId) {
+      if (defaultRecipeId && next.id === defaultRecipeId) {
         const copy = { ...current };
         delete copy[key];
         return copy;
@@ -248,21 +343,19 @@ export default function MealPlannerScreen({ onOpenProfile }) {
     setEaten(next);
   };
 
-  const sourceLabel = plan
-    ? [
-        plan.source === 'openfoodfacts'
-          ? `SA campus foods · ${plan.liveCount} products`
-          : 'SA staple meals',
-        plan.priceSource === 'loyaltyhub' || plan.priceCount
-          ? 'Live shelf prices where available'
-          : 'Estimated prices until live shelf quotes load',
-      ].join(' · ')
-    : '';
+  const sourceLabel = catalogNote || buildSourceLabel(plan);
+
+  const downloadPlan = () =>
+    planDl.run(() =>
+      downloadMealPlan({ budget, goal, dietFilters, customByKey, swapByKey, mealsByDay, groceries, storeId, cadence, catalog })
+    );
 
   const renderMealList = (list, dayId) =>
     loading ? (
       <View style={styles.loading}>
-        <ActivityIndicator color={mealColors.primary} />
+        {/* Skeleton plates while SA foods and shelf prices load */}
+        <SkeletonCard style={{ marginHorizontal: 0, alignSelf: 'stretch' }} />
+        <SkeletonCard style={{ marginHorizontal: 0, alignSelf: 'stretch' }} />
         <Text style={[styles.loadingText, { color: colors.muted }]}>Fetching SA foods and live shelf prices…</Text>
       </View>
     ) : (
@@ -276,11 +369,15 @@ export default function MealPlannerScreen({ onOpenProfile }) {
             if (meal.custom) setOwnFor({ ...meal, dayId });
             else setSelectedMeal(meal);
           }}
-          onSwap={swapMeal}
-          onCookOwn={(item) => {
-            setSelectedMeal(null);
-            setOwnFor({ ...item, dayId: item.dayId || dayId });
-          }}
+          onSwap={viewing ? undefined : swapMeal}
+          onCookOwn={
+            viewing
+              ? undefined
+              : (item) => {
+                  setSelectedMeal(null);
+                  setOwnFor({ ...item, dayId: item.dayId || dayId });
+                }
+          }
         />
       ))
     );
@@ -319,6 +416,19 @@ export default function MealPlannerScreen({ onOpenProfile }) {
             );
           })}
         </View>
+
+        {viewing ? (
+          <View style={[styles.viewBanner, PHOTO_GLASS]}>
+            <Ionicons name="download" size={18} color={colors.accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.viewTitle}>Downloaded copy · {viewing.entry.title}</Text>
+              <Text style={styles.viewSub}>{downloadedOnLabel(viewing.entry.savedAt)} · read only</Text>
+            </View>
+            <TouchableOpacity onPress={() => setViewing(null)} hitSlop={8}>
+              <Text style={[styles.viewBack, { color: colors.accent }]}>My plan</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {tab === 'today' ? (
           <>
@@ -362,6 +472,9 @@ export default function MealPlannerScreen({ onOpenProfile }) {
             {sourceLabel ? (
               <Text style={[styles.source, { color: '#C9C9C9' }]}>{sourceLabel}</Text>
             ) : null}
+            {!viewing && plan ? (
+              <DownloadButton dl={planDl} onDownload={downloadPlan} style={{ marginTop: 12 }} />
+            ) : null}
 
             <DaySelector days={DAYS} selectedId={selectedDay} onSelect={setSelectedDay} />
             <Text style={[styles.section, { color: '#FFFFFF' }]}>{`${day.name}'s Meals`}</Text>
@@ -379,7 +492,7 @@ export default function MealPlannerScreen({ onOpenProfile }) {
                     {overBudget ? 'Over budget' : `${formatRand(remaining)} left`}
                   </Text>
                   <Text style={styles.budgetSub}>
-                    {formatRand(basketTotal)} of {formatRand(budget)} this week
+                    {formatRand(basketTotal)} of {formatRand(shownBudget)} this week
                   </Text>
                 </View>
                 <Ionicons name="cart" size={28} color="rgba(10,10,10,0.55)" />
@@ -387,17 +500,18 @@ export default function MealPlannerScreen({ onOpenProfile }) {
             ) : null}
 
             <GroceryList
-              items={groceries}
-              products={catalog?.products}
+              items={shownGroceries}
+              products={shownProducts}
               liveSpecials={catalog?.specials}
               priceSource={catalog?.priceSource}
               loyaltyError={catalog?.loyaltyError}
-              storeId={storeId}
-              onStoreChange={setStoreId}
-              cadence={cadence}
-              onCadenceChange={setCadence}
+              storeId={shownStoreId}
+              onStoreChange={viewing ? undefined : setStoreId}
+              cadence={shownCadence}
+              onCadenceChange={viewing ? () => {} : setCadence}
+              offlineNote={viewing ? `Downloaded copy · ${downloadedOnLabel(viewing.entry.savedAt)}` : ''}
               onToggle={(id) =>
-                setGroceries((current) => {
+                setShownGroceries((current) => {
                   if (current.some((item) => item.id === id)) {
                     return current.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item));
                   }
@@ -407,14 +521,14 @@ export default function MealPlannerScreen({ onOpenProfile }) {
                 })
               }
               onAdd={(item) =>
-                setGroceries((current) =>
+                setShownGroceries((current) =>
                   current.some((row) => row.id === item.id)
                     ? current
                     : [...current, { ...item, extra: true, checked: true, needed: true }]
                 )
               }
               onRemove={(id) =>
-                setGroceries((current) => current.filter((item) => !(item.id === id && item.extra)))
+                setShownGroceries((current) => current.filter((item) => !(item.id === id && item.extra)))
               }
             />
           </>
@@ -423,10 +537,11 @@ export default function MealPlannerScreen({ onOpenProfile }) {
 
       <MealDetail
         meal={selectedMeal}
-        products={catalog?.products}
+        products={recipeView ? { ...(catalog?.products || {}), ...recipeView.data.products } : shownProducts}
+        offlineNote={recipeView ? `Downloaded copy · ${downloadedOnLabel(recipeView.entry.savedAt)}` : ''}
         goal={goal}
         onChangeGoal={setGoal}
-        onSwap={swapMeal}
+        onSwap={recipeView || viewing ? undefined : swapMeal}
         onShare={async (item) => {
           try {
             await shareMealToCommunity(item, profile?.name);
@@ -439,7 +554,10 @@ export default function MealPlannerScreen({ onOpenProfile }) {
           setSelectedMeal(null);
           setOwnFor({ ...item, dayId: item.dayId || activeDayId });
         }}
-        onClose={() => setSelectedMeal(null)}
+        onClose={() => {
+          setSelectedMeal(null);
+          setRecipeView(null);
+        }}
       />
 
       <CustomDish
@@ -449,7 +567,7 @@ export default function MealPlannerScreen({ onOpenProfile }) {
         goal={goal}
         onChangeGoal={setGoal}
         onSave={(customMeal) => {
-          const key = `${customMeal.dayId}:${customMeal.slot}`;
+          const key = slotKey(customMeal.dayId, customMeal.slot);
           setSwapByKey((current) => {
             const copy = { ...current };
             delete copy[key];
@@ -548,6 +666,18 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     fontSize: 22,
   },
+  viewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 8,
+  },
+  viewTitle: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  viewSub: { color: '#C9C9C9', fontSize: 12, marginTop: 2 },
+  viewBack: { fontWeight: '800', fontSize: 14 },
   loading: {
     alignItems: 'center',
     paddingVertical: 28,

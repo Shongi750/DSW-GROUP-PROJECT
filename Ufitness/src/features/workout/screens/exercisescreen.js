@@ -4,14 +4,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { getProgram } from '../data/programs';
 import CatalogHeader from '../components/catalogheader';
 import SectionTitle from '../components/sectiontitle';
-import PrimaryButton from '../components/button';
 import { GlassScreen } from '../components/glass';
 import { OrangeStartBar } from '../components/startcard';
 import WorkoutListRow from '../components/workoutlistrow';
 import { useApp } from '../context/AppContext';
 import { lookupExercise } from '../lib/exercisedb';
 import { programMoves } from '../lib/session';
-import { buildSession, rememberExercises, saveSessionOffline, loadSavedSessions, removeSavedSession } from '../lib/sessionApi';
+import { buildSession, rememberExercises } from '../lib/sessionApi';
+import {
+  downloadWorkout,
+  loadWorkoutDownload,
+  removeWorkoutDownload,
+  workoutRefId,
+  workoutSnapshot,
+} from '../lib/workoutDownloads';
+import DownloadButton from '../../../components/DownloadButton';
+import { useDownload } from '../../../lib/downloads/useDownload';
+import { pickOfflineSource } from '../../../lib/downloads/downloadsCore';
+import { isOnline, useOnline } from '../../../lib/autoSync';
 
 export default function ExercisesScreen({ navigation, route }) {
   const {
@@ -35,7 +45,20 @@ export default function ExercisesScreen({ navigation, route }) {
   const sessionId = route.params?.sessionId || null;
   const [session, setSession] = useState(null);
   const [sessionError, setSessionError] = useState('');
-  const [sessionSaved, setSessionSaved] = useState(false);
+  const online = useOnline();
+  const refId = workoutRefId({ sessionId, programId: program?.id });
+  const dl = useDownload('workout', refId);
+  const [offlineCopy, setOfflineCopy] = useState(null); // downloaded session/program (or null)
+
+  // Downloaded copy of this session/program, if any.
+  useEffect(() => {
+    if (!refId) return undefined;
+    let alive = true;
+    loadWorkoutDownload(refId).then((saved) => alive && setOfflineCopy(saved?.data || null));
+    return () => {
+      alive = false;
+    };
+  }, [refId, dl.downloaded]);
 
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -43,16 +66,24 @@ export default function ExercisesScreen({ navigation, route }) {
     setBusy(true);
     setSessionError('');
     (async () => {
+      // Offline-first: no connection + a downloaded copy → use it straight away.
+      const saved = await loadWorkoutDownload(`session-${sessionId}`);
+      if (!isOnline() && saved?.data) {
+        if (!cancelled) {
+          setSession({ ...saved.data, offline: true });
+          setBusy(false);
+        }
+        return;
+      }
       try {
-        const saved = await loadSavedSessions();
-        if (cancelled) return;
-        setSessionSaved(Boolean(saved[sessionId]));
         const built = await buildSession(sessionId, { tier: profile.equipmentTier || 'bodyweight' });
         if (cancelled) return;
         rememberExercises(built.exercises);
         setSession(built);
       } catch (error) {
-        if (!cancelled) setSessionError(error.message || 'Could not build this session.');
+        if (cancelled) return;
+        if (saved?.data) setSession({ ...saved.data, offline: true });
+        else setSessionError(error.message || 'Could not build this session.');
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -85,8 +116,14 @@ export default function ExercisesScreen({ navigation, route }) {
     return () => clearTimeout(timer);
   }, [query, bodyPart, hasApiKey, program, sessionId, searchRemote, loadBodyPart]);
 
+  // Programs: offline (or catalog not loaded) → the downloaded exercises, which have photos + how-to.
+  const programSource = program
+    ? pickOfflineSource({ online, liveOk: catalogSource !== 'local', hasDownload: Boolean(offlineCopy?.exercises?.length) })
+    : null;
+
   const list = useMemo(() => {
     if (session?.exercises?.length) return session.exercises;
+    if (program && programSource === 'download') return offlineCopy.exercises;
     if (program) {
       return program.exerciseIds.map((id) => lookupExercise(id, catalog) || getExercise(id)).filter(Boolean);
     }
@@ -97,7 +134,7 @@ export default function ExercisesScreen({ navigation, route }) {
     return base.filter((item) =>
       `${item.name} ${item.focus?.join(' ') || ''} ${item.equipment || ''}`.toLowerCase().includes(needle)
     );
-  }, [session, program, catalog, query, getExercise, remoteRows]);
+  }, [session, program, programSource, offlineCopy, catalog, query, getExercise, remoteRows]);
 
   const startAll = () => {
     if (!list.length) return;
@@ -110,16 +147,14 @@ export default function ExercisesScreen({ navigation, route }) {
     });
   };
 
-  const downloadSession = async () => {
-    if (!session) return;
-    if (sessionSaved) {
-      await removeSavedSession(session.id);
-      setSessionSaved(false);
-      return;
-    }
-    await saveSessionOffline(session);
-    setSessionSaved(true);
-  };
+  // Download for offline: exercise list, sets/reps, how-to + GIFs/photos (+ clip media on the phone).
+  const downloadThis = () =>
+    dl.run(async () => {
+      const moves = session?.moves || programMoves(program, getExercise);
+      await downloadWorkout(workoutSnapshot({ session, program, exercises: list, moves }));
+    });
+  const removeThis = () => dl.run(() => removeWorkoutDownload(refId));
+  const usingOffline = Boolean(session?.offline) || programSource === 'download';
 
   return (
     <GlassScreen>
@@ -138,6 +173,8 @@ export default function ExercisesScreen({ navigation, route }) {
       <Text className="-mt-1 mb-3 text-[13px] text-muted">
         {sessionError
           ? sessionError
+          : usingOffline
+          ? `${list.length} moves · downloaded copy (offline)`
           : session
           ? `${list.length} moves · ${session.source === 'exercisedb' ? 'ExerciseDB' : 'exercise library'} · ${session.meta || 'tap one to preview'}`
           : program
@@ -200,12 +237,8 @@ export default function ExercisesScreen({ navigation, route }) {
       })}
 
       <View className="mt-3 gap-3">
-        {session ? (
-          <PrimaryButton
-            title={sessionSaved ? 'Remove download' : 'Download session'}
-            icon={sessionSaved ? 'trash-outline' : 'download-outline'}
-            onPress={downloadSession}
-          />
+        {(session || program) && list.length ? (
+          <DownloadButton dl={{ ...dl, remove: removeThis }} onDownload={downloadThis} />
         ) : null}
         <OrangeStartBar
           title={session || program ? 'Start course' : 'Start first exercise'}

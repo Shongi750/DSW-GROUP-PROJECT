@@ -13,23 +13,30 @@ const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 export default function DietPreferencesScreen({ navigation }) {
   const { colors } = useTheme();
   const { profile, updateFields } = useApp();
-  const value = mergeDietFilters(profile?.dietFilters);
+  const dietFromProfile = profile && profile.dietFilters ? profile.dietFilters : undefined;
+  const value = mergeDietFilters(dietFromProfile);
 
-  const onChange = async (next) => {
+  // Keep profile and saved week plan in sync so Meals tab picks this up right away.
+  async function handleDietChange(next) {
     const dietFilters = mergeDietFilters(next);
-    updateFields?.({ dietFilters });
+    if (updateFields) {
+      updateFields({ dietFilters });
+    }
     const saved = await loadSavedPlan();
-    await saveSavedPlan({ ...(saved || {}), dietFilters });
-  };
+    const planToSave = saved ? { ...saved, dietFilters } : { dietFilters };
+    await saveSavedPlan(planToSave);
+  }
+
+  function goBack() {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  }
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
-        <Pressable
-          onPress={() => navigation.canGoBack() && navigation.goBack()}
-          hitSlop={10}
-          style={styles.iconBtn}
-        >
+        <Pressable onPress={goBack} hitSlop={10} style={styles.iconBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.title, { color: colors.text }]}>Eat & Allergies</Text>
@@ -39,7 +46,7 @@ export default function DietPreferencesScreen({ navigation }) {
         <Text style={[styles.subtitle, { color: colors.muted }]}>
           Tap common filters, or type any other allergy. The Meals week skips matching ingredients.
         </Text>
-        <DietFilter value={value} onChange={onChange} />
+        <DietFilter value={value} onChange={handleDietChange} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -56,6 +63,6 @@ const styles = StyleSheet.create({
   },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   title: { ...display, flex: 1, textAlign: 'center', fontSize: 18, textTransform: 'uppercase' },
-  content: { padding: 16, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 100 },
   subtitle: { fontSize: 14, lineHeight: 20, marginBottom: 4 },
 });

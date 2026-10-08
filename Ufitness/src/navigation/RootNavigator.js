@@ -5,11 +5,12 @@ import { setupLooksComplete } from '../lib/profileStore';
 import AuthStack from './AuthStack';
 import UnlockScreen from '../screens/auth/UnlockScreen';
 import VerifyEmailScreen from '../screens/auth/VerifyEmailScreen';
+import SuspendedScreen from '../screens/auth/SuspendedScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const { user, profile, needsEmailVerification, sessionLocked } = useApp();
+  const { user, profile, needsEmailVerification, sessionLocked, suspension } = useApp();
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { flex: 1 } }}>
@@ -19,6 +20,8 @@ export default function RootNavigator() {
         <Stack.Screen name="Auth" component={AuthStack} />
       ) : sessionLocked ? (
         <Stack.Screen name="Unlock" component={UnlockScreen} />
+      ) : suspension.suspended ? (
+        <Stack.Screen name="Suspended" component={SuspendedScreen} />
       ) : !setupLooksComplete(profile) ? (
         <Stack.Screen
           name="Onboarding"

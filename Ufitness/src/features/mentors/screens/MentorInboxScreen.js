@@ -1,3 +1,7 @@
+/**
+ * MentorInboxScreen — pending mentor requests from students.
+ * Accept → respondToMentorRequest('active'); Decline → 'declined'. Both hit mentorRequests API.
+ */
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -7,6 +11,7 @@ import InspoBackground from '../../../components/InspoBackground';
 import { PHOTO_GLASS } from '../../../components/PhotoShell';
 import { listRequestsForMentor, respondToMentorRequest } from '../lib/mentorRequests';
 import MentorGate from '../components/MentorGate';
+import { useSyncTick } from '../../../lib/autoSync';
 
 export default function MentorInboxScreen({ navigation }) {
   const { colors } = useTheme();
@@ -14,20 +19,34 @@ export default function MentorInboxScreen({ navigation }) {
   const mentorId = profile.userId || currentStudent.id;
   const [rows, setRows] = useState([]);
   const [busyId, setBusyId] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // Pending requests sent to the signed-in mentor (mentor_requests.mentor_id = me)
   const reload = useCallback(async () => {
-    setRows(await listRequestsForMentor(mentorId));
+    try {
+      setRows(await listRequestsForMentor(mentorId));
+    } finally {
+      setLoading(false);
+    }
   }, [mentorId]);
 
+  const syncTick = useSyncTick(); // reload after reconnecting
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+    }, [reload, syncTick])
   );
 
   const respond = async (id, status) => {
-    setBusyId(id);
-    await respondToMentorRequest(id, status);
+    setBusyId(id); // Block double-tap while the Supabase write runs.
+    try {
+      await respondToMentorRequest(id, status);
+    } catch (error) {
+      Alert.alert('Could not update request', error.message);
+      setBusyId('');
+      await reload();
+      return;
+    }
     await reload();
     setBusyId('');
     if (status === 'active') {
@@ -50,7 +69,13 @@ export default function MentorInboxScreen({ navigation }) {
             <Text style={styles.copy}>Students asking you to mentor them.</Text>
           </>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No pending requests.</Text>}
+        ListEmptyComponent={
+          loading ? (
+            <ActivityIndicator color={colors.brand} style={{ marginTop: 24 }} />
+          ) : (
+            <Text style={styles.empty}>No pending requests.</Text>
+          )
+        }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.name}>{item.studentName}</Text>

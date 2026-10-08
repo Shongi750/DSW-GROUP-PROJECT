@@ -3,9 +3,12 @@ import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { colors } from '../constants/theme';
+import { localMediaUri, useLocalMedia } from '../../../lib/downloads/downloadsStore';
 
-export default function ExerciseGif({ uri, frames, style, iconSize = 42 }) {
-  const stills = (frames || []).filter(Boolean);
+export default function ExerciseGif({ uri: remoteUri, frames, style, iconSize = 42 }) {
+  // Downloaded workouts: use the saved file on the phone instead of the web link.
+  const uri = useLocalMedia(remoteUri);
+  const stills = (frames || []).filter(Boolean).map(localMediaUri);
   const animated = stills.length > 1;
   const [frame, setFrame] = useState(0);
 

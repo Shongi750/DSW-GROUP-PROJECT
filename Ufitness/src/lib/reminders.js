@@ -212,7 +212,7 @@ export function showPrivacySheet() {
         text: on ? `Turn off ${label} unlock` : `Unlock with ${label}`,
         onPress: () => {
           if (on) disableUnlock();
-          else enableUnlock({});
+          else enableUnlock();
         },
       });
     }
@@ -220,8 +220,8 @@ export function showPrivacySheet() {
     Alert.alert(
       'Privacy & Security',
       on
-        ? `Fingerprint / Face ID unlock is on. The password (if saved) lives in the phone keystore, not ordinary app storage. Web still uses email and password.\n\nLogin, meals, and community also copy to your Supabase account when you are signed in. Sign out keeps the cloud profile.`
-        : `Login, meals, community posts, theme, and these reminders stay on this device as cache. When you are signed in they also copy to your Supabase account. Signing out clears the session, not the cloud profile.${can ? `\n\nAfter the first password login you can unlock with ${label}.` : ''}`,
+        ? `Fingerprint / Face ID unlock is on. It locks the saved session; your password is not stored on this phone. Web still uses email and password.\n\nLogin, meals, and community also copy to your Supabase account when you are signed in. Sign out keeps the cloud profile.`
+        : `Login, meals, community posts, theme, and these reminders stay on this device as cache. When you are signed in they also copy to your Supabase account. Signing out clears the session, not the cloud profile.${can ? `\n\nTurn this on to lock the app with ${label} when you reopen it.` : ''}`,
       buttons
     );
   });

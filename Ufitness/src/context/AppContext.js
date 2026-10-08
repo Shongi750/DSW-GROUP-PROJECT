@@ -4,16 +4,20 @@ import { groceryTotalFromList, remainingAfterGrocery, resolveWeeklyBudget } from
 import { EMPTY_DIET_FILTERS } from '../features/meals/lib/diet';
 import { loadSavedPlan } from '../features/meals/lib/persist';
 import { authError, isSupabaseConfigured, supabase } from '../lib/supabase';
-import { setCurrentUid } from '../lib/cloudCache';
+import { checkCloudSetup, setCurrentUid } from '../lib/cloudCache';
 import { wipeLocalUfitnessData } from '../lib/wipeLocal';
 import { forgetProfile, recallProfile, rememberProfile, setupLooksComplete } from '../lib/profileStore';
 import { deleteCloudUser, fetchCloudUser, mergeCloudProfile, saveCloudUser } from '../lib/cloudUser';
 import { assertUjStudentAccount, isCampusAdmin, personName, studentNumberFromEmail } from '../lib/ujEmail';
 import { markSignedOut, preferSignUp } from '../lib/authEntry';
-import { disableUnlock, shouldLockSession } from '../lib/biometrics';
+import { clearLegacySecrets, disableUnlock, shouldLockSession } from '../lib/biometrics';
 import { pingDailyUsage } from '../lib/usagePing';
 import { clearPendingSignup, currentHref } from '../lib/emailLink';
 import { capabilitiesFor, isMentorRole, normalizeRoles, ROLES, withRole } from '../lib/roles';
+import { isRateLimitError } from '../lib/resendCooldown';
+import { fetchMySuspension } from '../lib/moderation';
+import { AppState } from 'react-native';
+import { startAutoSync } from '../lib/autoSync';
 
 const STORAGE_KEY = 'ufitness.session.v1';
 const GUEST_KEY = 'workoutapp.guest.v1';
@@ -65,7 +69,8 @@ const AppContext = createContext(null);
 async function sendSignupCode(email, metadata) {
   const account = assertUjStudentAccount({ email });
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Add the Supabase URL and anon key in Ufitness/.env, then restart the app.');
+    console.warn('Supabase is not configured. Check Ufitness/.env');
+    throw new Error('Sign-in is temporarily unavailable. Try again later.');
   }
   const { error } = await supabase.auth.signInWithOtp({
     email: account.email,
@@ -182,8 +187,12 @@ export function AppProvider({ children }) {
   const [verificationError, setVerificationError] = useState('');
   const [awaitingLink, setAwaitingLink] = useState(false);
   const [pendingOtp, setPendingOtp] = useState(null);
+  // Register fields kept in memory when the student taps "Use a different email".
+  const [registerDraft, setRegisterDraft] = useState(null);
   const [sessionLocked, setSessionLocked] = useState(false);
   const [serverAdmin, setServerAdmin] = useState(false);
+  // Campus Admin can suspend an account (profiles.suspended). Checked on sign-in and app foreground.
+  const [suspension, setSuspension] = useState({ suspended: false, reason: '' });
   const pendingRef = useRef(null);
   const skipLockRef = useRef(false);
 
@@ -196,7 +205,10 @@ export function AppProvider({ children }) {
       if (!active) return;
       setUser(nextUser);
       setProfile(budgeted);
-      if (nextUser?.id) pingDailyUsage(nextUser.id);
+      if (nextUser?.id) {
+        pingDailyUsage(nextUser.id);
+        checkCloudSetup(); // sets the sync badge (Synced / Cloud not set up)
+      }
       if (nextUser && !skipLockRef.current && (await shouldLockSession())) {
         setSessionLocked(true);
       } else {
@@ -207,6 +219,8 @@ export function AppProvider({ children }) {
 
     (async () => {
       try {
+        // Old builds kept the password in SecureStore; wipe it on every start.
+        await clearLegacySecrets();
         await startLoggedOutIfRequested();
         await clearPendingSignup();
         const saved = await readSavedSession();
@@ -330,7 +344,9 @@ export function AppProvider({ children }) {
         name,
         studentNumber: account.studentNumber,
         password,
+        sentAt: Date.now(), // starts the 60 s "Send a new code" cooldown
       });
+      setRegisterDraft(null);
       return { needsOtp: true };
     }
 
@@ -353,19 +369,50 @@ export function AppProvider({ children }) {
   const resetPassword = async (email) => {
     const account = assertUjStudentAccount({ email });
     if (!isSupabaseConfigured || !supabase) {
-      throw new Error('Add the Supabase URL and anon key in Ufitness/.env, then restart the app.');
+      console.warn('Supabase is not configured. Check Ufitness/.env');
+      throw new Error('Sign-in is temporarily unavailable. Try again later.');
     }
     const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(account.email, { redirectTo });
     if (error) throw new Error(authError(error));
   };
 
+  // Resend the sign-up code. Supabase's resend for an unconfirmed sign-up is
+  // auth.resend({ type: 'signup' }). Errors are thrown as-is (status / code / message)
+  // so VerifyEmailScreen can show the right wait time for rate limits.
   const resendVerificationEmail = useCallback(async () => {
     const email = pendingOtp?.email;
     if (!email) {
       throw new Error('Create the account again before asking for another code.');
     }
-    await sendSignupCode(email);
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error('Sign-in is temporarily unavailable. Try again later.');
+    }
+    const { error } = await supabase.auth.resend({ type: 'signup', email });
+    if (error) {
+      if (isRateLimitError(error) || /network|fetch/i.test(String(error.message || ''))) throw error;
+      // Not a rate limit (e.g. the account was created another way): send a normal email code instead.
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      if (otpError) throw otpError;
+    }
+    const sentAt = Date.now();
+    setPendingOtp((current) => (current ? { ...current, sentAt } : current));
+    return sentAt;
+  }, [pendingOtp]);
+
+  // Back to Register with the same name / student number / password filled in.
+  const backToRegister = useCallback(() => {
+    if (pendingOtp) {
+      setRegisterDraft({
+        name: pendingOtp.name || '',
+        studentNumber: pendingOtp.studentNumber || '',
+        password: pendingOtp.password || '',
+      });
+    }
+    setPendingOtp(null);
   }, [pendingOtp]);
 
   const verifySignupCode = useCallback(async (code) => {
@@ -488,6 +535,30 @@ export function AppProvider({ children }) {
     };
   }, [user?.id, user?.email]);
 
+  // Offline queue: flush on reconnect / foreground while signed in.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return startAutoSync(user.id);
+  }, [user?.id]);
+
+  const recheckSuspension = useCallback(async () => {
+    if (!user?.id) {
+      setSuspension({ suspended: false, reason: '' });
+      return { suspended: false, reason: '' };
+    }
+    const next = await fetchMySuspension();
+    setSuspension(next);
+    return next;
+  }, [user?.id]);
+
+  useEffect(() => {
+    recheckSuspension();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') recheckSuspension();
+    });
+    return () => sub.remove();
+  }, [recheckSuspension]);
+
   const deleteAccount = async () => {
     if (supabase) {
       try {
@@ -566,9 +637,19 @@ export function AppProvider({ children }) {
     [roles, campusAdmin]
   );
 
+  // Local only. The cloud keeps "mentor" only when an admin grants it or an invite is
+  // accepted (accept_mentor_invite), so this is just for the dev "Try Mentor Hub" shortcut.
   const grantMentorRole = useCallback(() => {
     updateFields({ roles: withRole(profile.roles, ROLES.MENTOR) });
   }, [profile.roles, updateFields]);
+
+  // After accept_mentor_invite() the server returns the real roles list.
+  const applyServerRoles = useCallback(
+    (serverRoles) => {
+      updateFields({ roles: normalizeRoles([...normalizeRoles(profile.roles), ...normalizeRoles(serverRoles)]) });
+    },
+    [profile.roles, updateFields]
+  );
 
   const value = {
     booting,
@@ -580,7 +661,10 @@ export function AppProvider({ children }) {
     capabilities,
     isMentor: isMentorRole(roles),
     grantMentorRole,
+    applyServerRoles,
     sessionLocked,
+    suspension,
+    recheckSuspension,
     unlockSession: () => setSessionLocked(false),
     login,
     register,
@@ -592,7 +676,11 @@ export function AppProvider({ children }) {
     verificationError,
     awaitingLink,
     pendingOtpEmail: pendingOtp?.email || '',
+    codeSentAt: pendingOtp?.sentAt || 0,
     clearPendingOtp: () => setPendingOtp(null),
+    backToRegister,
+    registerDraft,
+    clearRegisterDraft: () => setRegisterDraft(null),
     needsEmailVerification: Boolean(pendingOtp) && !user,
     updateField,
     updateFields,

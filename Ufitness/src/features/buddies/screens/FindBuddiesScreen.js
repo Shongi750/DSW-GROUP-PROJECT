@@ -1,3 +1,7 @@
+/**
+ * FindBuddiesScreen — match students by campus/goal via buddyService + listStudents.
+ * Buddies tab sends requests; Mentors tab delegates to onOpenMentors (full mentor flow).
+ */
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
@@ -8,7 +12,6 @@ import {
   Pressable,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,10 +19,13 @@ import { useTheme, display, radius, spacing } from '../../../context/ThemeContex
 import InspoBackground from '../../../components/InspoBackground';
 import BuddyCard from '../components/BuddyCard';
 import { findPotentialBuddies, sendBuddyRequest } from '../services/buddyService';
-import { listStudents } from '../../../lib/students';
+import { listStudents, mentorsFrom } from '../../../lib/students';
+import { useSyncTick } from '../../../lib/autoSync';
+import { SkeletonCard } from '../../../components/Skeleton';
 
 const CAMPUS_FILTERS = ['All Campuses', 'APK', 'APB', 'DFC', 'SWC'];
 
+/** UJ campuses can be stored as "APK" or "APK — …"; chip filter still matches. */
 function campusMatches(studentCampus, filter) {
   if (filter === 'All Campuses') return true;
   const c = String(studentCampus || '');
@@ -41,19 +47,16 @@ export default function FindBuddiesScreen({ currentStudent, onMessage, onOpenMen
     const results = await findPotentialBuddies(currentStudent);
     const directory = await listStudents();
     setMatches(results);
-    setMentors(
-      directory.filter(
-        (student) =>
-          student.id !== currentStudent?.id &&
-          /intermediate|advanced/i.test(student.experienceLevel || '')
-      )
-    );
+    // Same rule as Find a Mentor: students who hold the mentor role
+    setMentors(mentorsFrom(directory, currentStudent?.id));
   }, [currentStudent]);
 
+  // Reload after reconnecting (syncTick) as well as on first open.
+  const syncTick = useSyncTick();
   useEffect(() => {
     setLoading(true);
     loadMatches().finally(() => setLoading(false));
-  }, [loadMatches]);
+  }, [loadMatches, syncTick]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -152,8 +155,11 @@ export default function FindBuddiesScreen({ currentStudent, onMessage, onOpenMen
       </View>
 
       {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.brand} />
+        // Skeleton cards instead of a spinner while buddies load
+        <View style={{ paddingTop: 16 }}>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </View>
       ) : tab === 'Mentors' ? (
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>

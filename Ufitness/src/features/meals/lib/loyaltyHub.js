@@ -1,4 +1,18 @@
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
+import { currentUid } from '../../../lib/cloudCache';
+import { proxyBody, proxyErrorAction } from './loyaltyProxyRules';
+
+// LoyaltyHub live shelf prices.
+// The API key now lives on the server: the app calls the Supabase Edge Function
+// `loyaltyhub-proxy` (see supabase/functions/loyaltyhub-proxy and DEPLOY-EDGE-FUNCTION.md).
+// Fallback while the function isn't deployed: the old direct call, but only if
+// EXPO_PUBLIC_LOYALTYHUB_KEY is still in .env; otherwise prices stay estimated.
+
 const BASE = 'https://loyaltyhub.co.za/api/v1';
+const FUNCTION_NAME = 'loyaltyhub-proxy';
+
+// Set when the function isn't deployed / has no key, so we stop asking until the app restarts.
+let proxyDown = false;
 
 const RETAILER_NAMES = {
   shoprite: 'Shoprite',
@@ -13,17 +27,27 @@ const RETAILER_NAMES = {
   usave: 'Usave',
 };
 
-export function loyaltyHubKey() {
+// Old client-side key (being removed — delete it from .env after deploying the function).
+function legacyKey() {
   return String(process.env.EXPO_PUBLIC_LOYALTYHUB_KEY || '').trim();
 }
 
-export function hasLoyaltyHubKey() {
-  const key = loyaltyHubKey();
+function hasLegacyKey() {
+  const key = legacyKey();
   return Boolean(key) && !key.includes('your_key');
 }
 
+function proxyPossible() {
+  return !proxyDown && Boolean(isSupabaseConfigured && supabase && currentUid());
+}
+
+/** True when live LoyaltyHub prices can be tried (Edge Function or old key). */
+export function hasLoyaltyHubKey() {
+  return proxyPossible() || hasLegacyKey();
+}
+
 function headers() {
-  const key = loyaltyHubKey();
+  const key = legacyKey();
   return {
     Accept: 'application/json',
     Authorization: `Bearer ${key}`,
@@ -145,8 +169,36 @@ export function summariseLoyaltyRows(rows = []) {
   };
 }
 
+// Ask the Edge Function. Returns { data } on success, or { fallback: true }.
+async function viaProxy(path, params) {
+  const body = proxyBody(path, params);
+  if (!body) return { data: null };
+  const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, { body });
+  if (!error) return { data };
+
+  const status = Number(error?.context?.status) || 0;
+  let message = error?.message || '';
+  try {
+    const details = await error.context.json();
+    message = details?.error || message;
+  } catch {
+    /* no JSON body (network error) */
+  }
+
+  const action = proxyErrorAction(status, message);
+  if (action === 'rate_limit') throw new Error('LoyaltyHub rate limit');
+  if (action === 'rejected') throw new Error('LoyaltyHub key rejected');
+  if (action === 'error') throw new Error(message || 'LoyaltyHub failed');
+  if (status === 404 || status === 503) proxyDown = true; // not deployed / no key on the server
+  return { fallback: true };
+}
+
 async function getJson(path, params = {}) {
-  if (!hasLoyaltyHubKey()) return null;
+  if (proxyPossible()) {
+    const result = await viaProxy(path, params);
+    if (!result.fallback) return result.data;
+  }
+  if (!hasLegacyKey()) return null;
   const search = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
   );

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,13 +11,28 @@ import { PressScale } from '../../components/motion';
 import {
   biometricLabel,
   canUseBiometrics,
+  authenticateUnlock,
   disableUnlock,
-  enableUnlockFlagOnly,
-  hasUnlockSecret,
+  enableUnlock,
   isUnlockEnabled,
 } from '../../lib/biometrics';
 import { DEFAULT_PRIVACY, normalizePrivacy } from '../../lib/privacy';
 import { hapticLight, hapticSelection } from '../../lib/haptics';
+
+// Privacy & Security
+// - Biometrics: Face ID / fingerprint unlock (phones only)
+// - Discovery toggles: who can see you in buddy finder / mentor list
+// - Safety: Blocked users list (unblock)
+
+function bioUnlockCaption(bioOn) {
+  if (Platform.OS === 'web') {
+    return 'Use student number + password on web.';
+  }
+  if (bioOn) {
+    return 'On — reopening the app asks for biometrics. No password is stored.';
+  }
+  return 'Turn on to lock your saved session when you reopen the app.';
+}
 
 function ToggleRow({ label, caption, value, onValueChange, colors, disabled }) {
   return (
@@ -44,35 +59,38 @@ function ToggleRow({ label, caption, value, onValueChange, colors, disabled }) {
 export default function PrivacySecurityScreen({ navigation }) {
   const { colors } = useTheme();
   const { profile, updateFields } = useApp();
-  const privacy = useMemo(() => normalizePrivacy(profile.privacy), [profile.privacy]);
+  // Same defaults every time so missing fields don’t break toggles.
+  const privacy = normalizePrivacy(profile.privacy);
 
   const [canBio, setCanBio] = useState(false);
   const [bioOn, setBioOn] = useState(false);
-  const [hasSecret, setHasSecret] = useState(false);
   const [label, setLabel] = useState('biometrics');
 
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      Promise.all([
-        canUseBiometrics(),
-        isUnlockEnabled(),
-        biometricLabel(),
-        hasUnlockSecret(),
-      ]).then(([can, on, name, secret]) => {
-        if (!alive) return;
+
+      async function loadSecurityState() {
+        const can = await canUseBiometrics();
+        const on = await isUnlockEnabled();
+        const name = await biometricLabel();
+        if (!alive) {
+          return;
+        }
         setCanBio(can);
         setBioOn(on);
         setLabel(name);
-        setHasSecret(secret);
-      });
-      return () => {
+      }
+
+      loadSecurityState();
+
+      return function cleanup() {
         alive = false;
       };
     }, [])
   );
 
-  const setPrivacy = (patch) => {
+  function setPrivacy(patch) {
     updateFields({
       privacy: {
         ...DEFAULT_PRIVACY,
@@ -80,9 +98,9 @@ export default function PrivacySecurityScreen({ navigation }) {
         ...patch,
       },
     });
-  };
+  }
 
-  const toggleBio = async (next) => {
+  async function toggleBio(next) {
     hapticLight();
     if (Platform.OS === 'web') {
       Alert.alert(
@@ -99,12 +117,12 @@ export default function PrivacySecurityScreen({ navigation }) {
       return;
     }
     if (next) {
-      const ok = await enableUnlockFlagOnly();
+      // Confirm it is really them before switching the lock on
+      const confirmed = await authenticateUnlock('Confirm ' + label);
+      if (!confirmed) return;
+      const ok = await enableUnlock();
       if (!ok) {
-        Alert.alert(
-          `Enable ${label}`,
-          'Sign out, sign in with your password once, then choose Enable when asked. After that you can turn this on here.'
-        );
+        Alert.alert(`Enable ${label}`, 'Could not turn on the lock on this device. Try again.');
         return;
       }
       setBioOn(true);
@@ -112,8 +130,12 @@ export default function PrivacySecurityScreen({ navigation }) {
     }
     await disableUnlock();
     setBioOn(false);
-    setHasSecret(false);
-  };
+  }
+
+  function goBack() {
+    hapticLight();
+    navigation.goBack();
+  }
 
   return (
     <SafeAreaView style={styles.screen} edges={['bottom']}>
@@ -128,16 +150,8 @@ export default function PrivacySecurityScreen({ navigation }) {
         <Text style={styles.groupLabel}>Security</Text>
         <View style={styles.card}>
           <ToggleRow
-            label={`Unlock with ${label}`}
-            caption={
-              Platform.OS === 'web'
-                ? 'Use student number + password on web.'
-                : bioOn
-                  ? 'On — credentials stay in the device keystore.'
-                  : hasSecret
-                    ? 'Ready — turn on to require biometrics when reopening the app.'
-                    : 'Sign in with password once, then enable here or when prompted.'
-            }
+            label={'Unlock with ' + label}
+            caption={bioUnlockCaption(bioOn)}
             value={bioOn}
             onValueChange={toggleBio}
             colors={colors}
@@ -202,6 +216,16 @@ export default function PrivacySecurityScreen({ navigation }) {
           />
         </View>
 
+        <Text style={styles.groupLabel}>Safety</Text>
+        <PressScale style={[styles.card, styles.linkRow]} onPress={() => navigation.navigate('BlockedUsers')}>
+          <Ionicons name="hand-left-outline" size={18} color={colors.brand} />
+          <View style={styles.toggleCopy}>
+            <Text style={styles.toggleLabel}>Blocked users</Text>
+            <Text style={styles.toggleCaption}>See who you blocked and unblock them.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
+        </PressScale>
+
         <View style={styles.noteCard}>
           <Ionicons name="shield-checkmark-outline" size={18} color={colors.brand} />
           <Text style={styles.note}>
@@ -210,13 +234,7 @@ export default function PrivacySecurityScreen({ navigation }) {
           </Text>
         </View>
 
-        <PressScale
-          style={styles.back}
-          onPress={() => {
-            hapticLight();
-            navigation.goBack();
-          }}
-        >
+        <PressScale style={styles.back} onPress={goBack}>
           <Text style={[styles.backText, { color: colors.brand }]}>Done</Text>
         </PressScale>
       </ScrollView>
@@ -226,7 +244,8 @@ export default function PrivacySecurityScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
-  content: { padding: spacing.screen, paddingBottom: 48 },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 14 },
+  content: { padding: spacing.screen, paddingBottom: 100 },
   kicker: {
     fontSize: type.kicker,
     fontWeight: type.kickerWeight,

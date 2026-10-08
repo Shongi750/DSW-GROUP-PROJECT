@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import WeekHeader from '../components/weekheader';
@@ -12,45 +12,98 @@ import { getWeekDays, daysWithSessions } from '../data/week';
 import { FLOOR_PLAN } from '../data/floorPlan';
 import { formatMoveMeta, estimateMinutes, movesFromIds } from '../lib/session';
 import { takeWorkoutAction } from '../lib/pendingStart';
+import { workoutsInCollection, imageForWorkout } from '../data/readyWorkouts';
+import { useActiveSession } from '../../../context/ActiveSessionContext';
 
+// Workout tab home — today’s plan, resume pill, and quick starts.
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { todayPlan, weekDone, weekTotal, insightPercent, profile, plan, program, getExercise, statusSentence } =
-    useApp();
+  const active = useActiveSession() || {};
+  const session = active.session;
+  const app = useApp();
+  const todayPlan = app.todayPlan;
+  const weekDone = app.weekDone;
+  const weekTotal = app.weekTotal;
+  const insightPercent = app.insightPercent;
+  const profile = app.profile;
+  const plan = app.plan;
+  const program = app.program;
+  const getExercise = app.getExercise;
+  const statusSentence = app.statusSentence;
+
   const planName = program ? program.goal.name : plan.name;
   const totalWeeks = program ? program.weeks : plan.weeks;
 
-  const week = useMemo(() => getWeekDays(), []);
-  const completedKeys = useMemo(() => daysWithSessions(profile.history), [profile.history]);
-  const [selectedKey, setSelectedKey] = useState(week.find((item) => item.isToday)?.key);
+  const week = getWeekDays();
+  const completedKeys = daysWithSessions(profile.history);
+  const todayKey = week.find(function (item) { return item.isToday; });
+  const [selectedKey, setSelectedKey] = useState(todayKey ? todayKey.key : undefined);
+  const campusReady = workoutsInCollection('dorm').slice(0, 3);
 
-  const openPreStart = useCallback(
-    (params) => {
-      navigation.navigate('PreStart', params);
-    },
-    [navigation],
-  );
+  function openPreStart(params) {
+    navigation.navigate('PreStart', params);
+  }
 
-  const startWorkout = useCallback(() => {
-    if (todayPlan.type !== 'train' || !todayPlan.moves.length) return;
+  function startWorkout() {
+    if (todayPlan.type !== 'train' || !todayPlan.moves.length) {
+      return;
+    }
     openPreStart({
       title: program ? program.goal.name : plan.name,
       minutes: estimateMinutes(todayPlan.moves) || plan.minutes || 30,
       level: plan.equipment || 'Train',
-      focus: program?.splitName || 'Today',
+      focus: (program && program.splitName) || 'Today',
       moves: todayPlan.moves.length,
       movesList: todayPlan.moves,
-      exerciseIds: todayPlan.moves.map((move) => move.id),
-      programId: program?.id || FLOOR_PLAN.id,
-      sessionId: todayPlan.session?.id,
+      exerciseIds: todayPlan.moves.map(function (move) { return move.id; }),
+      programId: (program && program.id) || FLOOR_PLAN.id,
+      sessionId: todayPlan.session && todayPlan.session.id,
     });
-  }, [todayPlan, program, plan, openPreStart]);
+  }
 
+  // Put the user back in Player with the saved timer state.
+  function resumeLive() {
+    const payload = session && session.resume;
+    if (!payload) {
+      return false;
+    }
+    const hasMoves = payload.moves && payload.moves.length;
+    const hasIds = payload.exerciseIds && payload.exerciseIds.length;
+    if (!hasMoves && !hasIds) {
+      return false;
+    }
+    navigation.navigate('Player', {
+      title: payload.title || 'Workout',
+      programId: payload.programId,
+      sessionId: payload.sessionId,
+      exerciseIds: payload.exerciseIds,
+      moves: payload.moves,
+      resume: payload,
+    });
+    return true;
+  }
+
+  // Deep links from notifications / other tabs land here as pending actions.
   useFocusEffect(
-    useCallback(() => {
+    React.useCallback(function () {
       let alive = true;
-      takeWorkoutAction().then((pending) => {
-        if (!alive || !pending) return;
+      takeWorkoutAction().then(function (pending) {
+        if (!alive || !pending) {
+          return;
+        }
+        if (pending.resumePlayer === true) {
+          resumeLive();
+          return;
+        }
+        // From Profile → Downloads: open the downloaded workout in the normal Exercises screen.
+        if (pending.openDownload) {
+          const ref = String(pending.openDownload);
+          const params = ref.startsWith('session-')
+            ? { sessionId: ref.slice('session-'.length) }
+            : { programId: ref.replace(/^program-/, '') };
+          navigation.navigate('Workouts', { screen: 'Exercises', params: params, initial: false });
+          return;
+        }
         if (pending.openInsights === true) {
           navigation.navigate('Insights');
           return;
@@ -59,11 +112,11 @@ export default function HomeScreen() {
           startWorkout();
           return;
         }
-        if (pending.preStart && pending.exerciseIds?.length) {
+        if (pending.preStart && pending.exerciseIds && pending.exerciseIds.length) {
           openPreStart(pending);
           return;
         }
-        if (pending.exerciseIds?.length) {
+        if (pending.exerciseIds && pending.exerciseIds.length) {
           openPreStart({
             title: pending.title || 'Workout',
             minutes: pending.minutes || 15,
@@ -78,10 +131,10 @@ export default function HomeScreen() {
           });
         }
       });
-      return () => {
+      return function () {
         alive = false;
       };
-    }, [navigation, startWorkout, openPreStart]),
+    }, [navigation])
   );
 
   return (
@@ -92,8 +145,26 @@ export default function HomeScreen() {
         days={week}
         selectedKey={selectedKey}
         completedKeys={completedKeys}
-        onSelect={(item) => setSelectedKey(item.key)}
+        onSelect={function (item) { setSelectedKey(item.key); }}
       />
+
+      {session && session.minimized && session.resume ? (
+        <>
+          <SectionTitle>Resume</SectionTitle>
+          <WorkoutCard
+            variant="featured"
+            eyebrow="Paused session"
+            title={session.currentMove || session.title || 'Continue workout'}
+            progressLabel={
+              'Move ' +
+              Math.min((session.movesDone || 0) + 1, session.movesTotal || 1) +
+              ' of ' +
+              (session.movesTotal || 1)
+            }
+            onStart={resumeLive}
+          />
+        </>
+      ) : null}
 
       <SectionTitle>Today</SectionTitle>
       {todayPlan.type === 'train' ? (
@@ -102,21 +173,24 @@ export default function HomeScreen() {
             variant="featured"
             eyebrow={
               program
-                ? `${program.goal.name} · ${program.splitName}`
-                : `${plan.name} · ~${plan.minutes} min · ${plan.equipment}`
+                ? program.goal.name + ' · ' + program.splitName
+                : plan.name + ' · ~' + plan.minutes + ' min · ' + plan.equipment
             }
             title={todayPlan.session.name}
-            progressLabel={`${todayPlan.moves.length} moves · ~${estimateMinutes(todayPlan.moves)} min`}
+            progressLabel={todayPlan.moves.length + ' moves · ~' + estimateMinutes(todayPlan.moves) + ' min'}
             onStart={startWorkout}
           />
           <GlassCard className="mt-3">
             <View className="gap-2">
-              {todayPlan.moves.map((move, index) => (
-                <Text key={`${move.id}-${index}`} className="text-sm text-muted">
-                  {index + 1}. {getExercise(move.id)?.name || move.id}
-                  {move.swapped ? ' (swapped)' : ''} · {formatMoveMeta(move)}
-                </Text>
-              ))}
+              {todayPlan.moves.map(function (move, index) {
+                const ex = getExercise(move.id);
+                return (
+                  <Text key={move.id + '-' + index} className="text-sm text-muted">
+                    {index + 1}. {(ex && ex.name) || move.id}
+                    {move.swapped ? ' (swapped)' : ''} · {formatMoveMeta(move)}
+                  </Text>
+                );
+              })}
             </View>
           </GlassCard>
         </>
@@ -126,66 +200,100 @@ export default function HomeScreen() {
           eyebrow={todayPlan.type === 'done' ? 'Session logged' : 'Rest day'}
           title={todayPlan.type === 'done' ? "You're done for today" : 'No extra work'}
           progressLabel={statusSentence}
-          onPress={() => navigation.navigate('Insights')}
+          onPress={function () { navigation.navigate('Insights'); }}
         />
       )}
+
+      <SectionTitle>Campus ready</SectionTitle>
+      <Text className="mb-2 text-[13px] leading-5 text-muted">
+        Dorm / desk sessions — no gym required.
+      </Text>
+      {campusReady.map(function (workout) {
+        return (
+          <View key={workout.id} className="mb-3">
+            <WorkoutCard
+              variant="compact"
+              eyebrow={workout.minutes + ' min · ' + workout.level}
+              title={workout.name}
+              progressLabel={workout.focus}
+              onPress={function () {
+                openPreStart({
+                  title: workout.name,
+                  minutes: workout.minutes,
+                  level: workout.level,
+                  focus: workout.focus,
+                  moves: workout.exerciseIds.length,
+                  exerciseIds: workout.exerciseIds,
+                  programId: workout.id,
+                  workoutId: workout.id,
+                  group: workout.group,
+                  image: imageForWorkout(workout),
+                });
+              }}
+            />
+          </View>
+        );
+      })}
+      <WorkoutCard
+        variant="compact"
+        eyebrow="Explore"
+        title="More workouts"
+        progressLabel="Strength, cardio, and custom builder."
+        onPress={function () { navigation.navigate('Workouts'); }}
+      />
 
       <View className="mt-3">
         <WorkoutCard
           variant="compact"
           eyebrow={planName}
-          title={`${weekDone} of ${weekTotal} sessions this week`}
-          progressLabel={program ? 'Open your plan to see sets, reps and weekly volume.' : 'Miss a day and the next free day becomes that session.'}
-          onPress={() => navigation.navigate('Plan')}
-        />
-      </View>
-
-      <View className="mt-3">
-        <WorkoutCard
-          variant="compact"
-          eyebrow="Music"
-          title={profile.musicLinks?.[profile.musicPlatform] ? 'Your workout playlist' : 'Pick your music service'}
-          progressLabel="Plays in Spotify, Apple Music, YouTube Music and more."
-          onPress={() => navigation.navigate('Music')}
+          title={weekDone + ' of ' + weekTotal + ' sessions this week'}
+          progressLabel={
+            program
+              ? 'Open your plan to see sets, reps and weekly volume.'
+              : 'Miss a day and the next free day becomes that session.'
+          }
+          onPress={function () { navigation.navigate('Plan'); }}
         />
       </View>
 
       <SectionTitle>My workouts</SectionTitle>
       {(profile.customWorkouts || []).length ? (
-        (profile.customWorkouts || []).slice(0, 3).map((workout) => (
-          <View key={workout.id} className="mb-3">
-            <WorkoutCard
-              variant="compact"
-              eyebrow="Custom"
-              title={workout.name}
-              progressLabel={`${workout.exerciseIds.length} moves`}
-              onPress={() =>
-                openPreStart({
-                  title: workout.name,
-                  minutes: Math.max(10, workout.exerciseIds.length * 2),
-                  level: 'Custom',
-                  focus: 'My workouts',
-                  moves: workout.exerciseIds.length,
-                  movesList: movesFromIds(workout.exerciseIds, getExercise),
-                  exerciseIds: workout.exerciseIds,
-                  programId: workout.id,
-                })
-              }
-            />
-          </View>
-        ))
+        (profile.customWorkouts || []).slice(0, 3).map(function (workout) {
+          return (
+            <View key={workout.id} className="mb-3">
+              <WorkoutCard
+                variant="compact"
+                eyebrow="Custom"
+                title={workout.name}
+                progressLabel={workout.exerciseIds.length + ' moves'}
+                onPress={function () {
+                  openPreStart({
+                    title: workout.name,
+                    minutes: Math.max(10, workout.exerciseIds.length * 2),
+                    level: 'Custom',
+                    focus: 'My workouts',
+                    moves: workout.exerciseIds.length,
+                    movesList: movesFromIds(workout.exerciseIds, getExercise),
+                    exerciseIds: workout.exerciseIds,
+                    programId: workout.id,
+                  });
+                }}
+              />
+            </View>
+          );
+        })
       ) : (
         <WorkoutCard
           variant="compact"
           eyebrow="Build"
           title="Create your own workout"
           progressLabel="Pick exercises, save, then train."
-          onPress={() => navigation.navigate('Workouts', { screen: 'Builder' })}
+          onPress={function () { navigation.navigate('Workouts', { screen: 'Builder' }); }}
         />
       )}
 
       <SectionTitle>On track?</SectionTitle>
-      <InsightsRow percent={insightPercent} onStartNew={() => navigation.navigate('Insights')} />
+      <InsightsRow percent={insightPercent} onStartNew={function () { navigation.navigate('Insights'); }} />
     </GlassScreen>
   );
 }

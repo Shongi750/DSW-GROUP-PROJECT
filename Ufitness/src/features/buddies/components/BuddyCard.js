@@ -85,7 +85,7 @@ export default function BuddyCard({
 
       {/* Bio quote - falls back to the match reasons when no bio is set */}
       {student.bio ? (
-        <Text style={styles.bio}>"{student.bio}"</Text>
+        <Text style={styles.bio}>“{student.bio}”</Text>
       ) : matchReasons && matchReasons.length > 0 ? (
         <Text style={styles.matchLine}>
           {matchScore !== undefined ? `${matchScore}% match — ` : ''}

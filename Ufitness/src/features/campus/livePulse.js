@@ -1,4 +1,6 @@
-// Simulated live campus data — deterministic per time slice, local only.
+// Campus pulse for Home.
+// Base busy % is simulated from time of day.
+// Real check-ins (last hour) add a small bump so GPS check-in shows up.
 
 const GYMS = [
   { id: 'kingsway', name: 'Kingsway Gym', short: 'KINGSWAY', peak: 84 },
@@ -16,8 +18,10 @@ const FEED = [
 
 function hash(str) {
   let h = 0;
-  for (let i = 0; i < str.length; i += 1) {
+  let i = 0;
+  while (i < str.length) {
     h = (h * 31 + str.charCodeAt(i)) | 0;
+    i = i + 1;
   }
   return Math.abs(h);
 }
@@ -27,25 +31,57 @@ function occupancyFor(gym, date) {
   const evening = Math.exp(-Math.pow(h - 18, 2) / 18);
   const morning = 0.55 * Math.exp(-Math.pow(h - 7.5, 2) / 6);
   const slice = Math.floor(date.getMinutes() / 5);
-  const jitter = (hash(`${gym.id}-${date.getHours()}-${slice}`) % 13) - 6;
+  const jitter = (hash(gym.id + '-' + date.getHours() + '-' + slice) % 13) - 6;
   const occ = Math.min(1, evening + morning) * gym.peak + jitter;
   return Math.max(6, Math.min(97, Math.round(occ)));
 }
 
-export function gymStatus(now = new Date()) {
-  return GYMS.map((gym) => {
-    const occupancy = occupancyFor(gym, now);
-    const level = occupancy > 75 ? 'PEAK' : occupancy > 45 ? 'BUSY' : 'CHILL';
-    return { ...gym, occupancy, level };
-  });
+// checkInCounts = { kingsway: 2, doornfontein: 0, ... } from gymCheckIn.js
+export function gymStatus(now, checkInCounts) {
+  if (!now) now = new Date();
+  if (!checkInCounts) checkInCounts = {};
+
+  const out = [];
+  let i = 0;
+  while (i < GYMS.length) {
+    const gym = GYMS[i];
+    let occupancy = occupancyFor(gym, now);
+    // each fresh check-in nudges busy % up a bit (capped)
+    const bump = Number(checkInCounts[gym.id] || 0) * 4;
+    occupancy = Math.min(97, occupancy + bump);
+    let level = 'CHILL';
+    if (occupancy > 75) level = 'PEAK';
+    else if (occupancy > 45) level = 'BUSY';
+    out.push({
+      id: gym.id,
+      name: gym.name,
+      short: gym.short,
+      occupancy: occupancy,
+      level: level,
+      checkIns: Number(checkInCounts[gym.id] || 0),
+    });
+    i = i + 1;
+  }
+  return out;
 }
 
-export function liveFeed(now = new Date(), count = 4) {
+export function liveFeed(now, count) {
+  if (!now) now = new Date();
+  if (!count) count = 4;
   const minute = Math.floor(now.getTime() / 60000);
-  return FEED.map((entry, i) => ({
-    ...entry,
-    minutesAgo: ((minute + i * 7) % 47) + 1,
-  }))
-    .sort((a, b) => a.minutesAgo - b.minutesAgo)
-    .slice(0, count);
+  const rows = [];
+  let i = 0;
+  while (i < FEED.length) {
+    const entry = FEED[i];
+    rows.push({
+      name: entry.name,
+      action: entry.action,
+      minutesAgo: ((minute + i * 7) % 47) + 1,
+    });
+    i = i + 1;
+  }
+  rows.sort(function (a, b) {
+    return a.minutesAgo - b.minutesAgo;
+  });
+  return rows.slice(0, count);
 }

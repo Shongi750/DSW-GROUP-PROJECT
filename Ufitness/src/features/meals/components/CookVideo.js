@@ -1,25 +1,48 @@
 import React, { useState } from 'react';
 import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { colors, radius } from '../constants/theme';
+import { useLocalMedia } from '../../../lib/downloads/downloadsStore';
+import { useOnline } from '../../../lib/autoSync';
 
 function searchUrl(video, mealTitle) {
   const query = video.query || mealTitle || video.title;
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
+// A cook video that is a real file link (mp4): plays the downloaded copy when there is one.
+function FileVideo({ url }) {
+  const uri = useLocalMedia(url);
+  const player = useVideoPlayer(uri, (next) => {
+    next.loop = false;
+  });
+  return <VideoView player={player} style={styles.player} nativeControls contentFit="contain" />;
+}
+
 export default function CookVideo({ video, mealTitle, label, moreLabel }) {
   const [thumbFailed, setThumbFailed] = useState(false);
-  if (!video?.youtubeId) return null;
+  const online = useOnline();
+  const youtubeThumb = video?.youtubeId ? `https://i.ytimg.com/vi/${video.youtubeId}/hqdefault.jpg` : null;
+  const thumb = useLocalMedia(youtubeThumb); // saved thumbnail when the recipe is downloaded
+  if (!video?.youtubeId && !video?.url) return null;
+
+  if (video.url) {
+    return (
+      <View style={styles.wrap}>
+        <FileVideo url={video.url} />
+        <Text style={styles.caption}>{video.title}</Text>
+      </View>
+    );
+  }
 
   const embed = `https://www.youtube-nocookie.com/embed/${video.youtubeId}?rel=0&modestbranding=1`;
   const watch = `https://www.youtube.com/watch?v=${video.youtubeId}`;
-  const thumb = `https://i.ytimg.com/vi/${video.youtubeId}/hqdefault.jpg`;
   const more = searchUrl(video, mealTitle);
 
   return (
     <View style={styles.wrap}>
-      {Platform.OS === 'web' ? (
+      {Platform.OS === 'web' && online ? (
         <View style={styles.player}>
           {React.createElement('iframe', {
             src: embed,
@@ -53,6 +76,9 @@ export default function CookVideo({ video, mealTitle, label, moreLabel }) {
         </Pressable>
       )}
       <Text style={styles.caption}>{video.title}</Text>
+      {!online ? (
+        <Text style={styles.channel}>You are offline — YouTube videos need internet. The steps above work offline.</Text>
+      ) : null}
       <Text style={styles.channel}>
         {label ||
           `Cook-along for this meal · ${video.channel} on YouTube. Numbered steps above still work if campus Wi‑Fi blocks the video.`}

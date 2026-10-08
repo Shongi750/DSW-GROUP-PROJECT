@@ -1,3 +1,7 @@
+/**
+ * MentorPipelineScreen — admin sends mentor invites to recommended 3rd+ year students.
+ * recommendMentors scores merged roster; invites are saved in Supabase `mentor_invites`.
+ */
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,10 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../../context/ThemeContext';
 import { useApp } from '../../../context/AppContext';
-import { SEED_STUDENTS } from '../data/usageSeed';
 import { loadLiveUsage } from '../lib/liveUsage';
 import { mergeCloudStudents, mergeLiveStudent, recommendMentors } from '../lib/recommendMentors';
-import { loadAdminState, sendMentorInvite } from '../lib/adminStore';
+import { loadSentInvites, sendMentorInvite } from '../../mentors/lib/mentorInvites';
 import AdminGate from '../components/AdminGate';
 
 const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
@@ -21,6 +24,8 @@ export default function MentorPipelineScreen({ navigation }) {
   const [workoutProfile, setWorkoutProfile] = useState({});
   const [invites, setInvites] = useState([]);
   const [cloudStudents, setCloudStudents] = useState([]);
+  const [inviteError, setInviteError] = useState('');
+  const [sendingId, setSendingId] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -29,8 +34,9 @@ export default function MentorPipelineScreen({ navigation }) {
     } catch {
       setWorkoutProfile({});
     }
-    const admin = await loadAdminState();
-    setInvites(admin.invites);
+    const sent = await loadSentInvites();
+    setInvites(sent.rows);
+    setInviteError(sent.error);
     const usage = await loadLiveUsage();
     setCloudStudents(usage.students || []);
   }, []);
@@ -41,14 +47,29 @@ export default function MentorPipelineScreen({ navigation }) {
     }, [refresh])
   );
 
-  const students = mergeLiveStudent(mergeCloudStudents(SEED_STUDENTS, cloudStudents), profile, workoutProfile);
-  const blocked = invites.filter((row) => row.status !== 'declined').map((row) => row.studentId);
-  const recommended = recommendMentors(students, blocked);
+  // Real students only (list_students + this phone's own workout results).
+  // Students who are already mentors, or who have an open / accepted invite, are skipped.
+  const students = mergeLiveStudent(mergeCloudStudents([], cloudStudents), profile, workoutProfile);
+  const alreadyMentors = cloudStudents
+    .filter((row) => Array.isArray(row.roles) && row.roles.includes('mentor'))
+    .map((row) => row.id);
+  const skip = [
+    ...invites.filter((row) => row.status !== 'declined').map((row) => row.studentId),
+    ...alreadyMentors,
+  ];
+  const recommended = recommendMentors(students, skip);
 
   const invite = async (student) => {
-    const next = await sendMentorInvite(student);
-    setInvites(next.invites);
-    Alert.alert('Invite sent', `${student.name} will see: “${student.inviteMessage}”`);
+    setSendingId(student.id);
+    try {
+      const saved = await sendMentorInvite(student);
+      if (saved) setInvites((current) => [saved, ...current]);
+      Alert.alert('Invite sent', `${student.name} will see it on their Profile: “${student.inviteMessage}”`);
+    } catch (error) {
+      Alert.alert('Invite not sent', error.message);
+    } finally {
+      setSendingId('');
+    }
   };
 
   return (
@@ -71,9 +92,13 @@ export default function MentorPipelineScreen({ navigation }) {
                 {student.campus} · {student.yearOfStudy || 'Year not set'} · {student.goal}
               </Text>
               <Text style={styles.why}>{student.inviteMessage}</Text>
-              <TouchableOpacity style={styles.send} onPress={() => invite(student)}>
+              <TouchableOpacity
+                style={[styles.send, sendingId === student.id && { opacity: 0.6 }]}
+                onPress={() => invite(student)}
+                disabled={Boolean(sendingId)}
+              >
                 <Ionicons name="send-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.sendText}>Send mentor request</Text>
+                <Text style={styles.sendText}>{sendingId === student.id ? 'Sending…' : 'Send mentor request'}</Text>
               </TouchableOpacity>
             </View>
           ))
@@ -84,12 +109,13 @@ export default function MentorPipelineScreen({ navigation }) {
         )}
 
         <Text style={styles.section}>Sent Requests</Text>
+        {inviteError ? <Text style={styles.copy}>{inviteError}</Text> : null}
         {invites.length ? (
           invites.map((row) => (
             <View key={row.id} style={[styles.sent, { backgroundColor: colors.overlay }]}>
               <Text style={styles.name}>{row.studentName}</Text>
               <Text style={styles.meta}>
-                {row.status} · {(row.reasons || []).join(', ')}
+                {row.status} · sent {row.sentAt ? new Date(row.sentAt).toLocaleDateString('en-ZA') : ''}
               </Text>
             </View>
           ))

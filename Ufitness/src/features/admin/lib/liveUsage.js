@@ -1,8 +1,10 @@
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { listStudents } from '../../../lib/students';
-import { loadUsageByDay } from '../../../lib/usagePing';
-import { loadCommunityState } from '../../community/persist';
-import { loadSavedPlan } from '../../meals/lib/persist';
-import { USAGE_BY_CAMPUS, USAGE_BY_DAY, USAGE_BY_MODULE } from '../data/usageSeed';
+import { isMissingTableError } from '../../../lib/cloudErrors';
+import { buildFeatureSeries, buildWeekSeries, hasAnyUsage } from './usageMath';
+
+// Real numbers for the Campus Admin dashboard. No sample data:
+// if nothing has been recorded yet, the screen shows an empty state.
 
 const CAMPUSES = ['APK', 'APB', 'DFC', 'SWC'];
 
@@ -15,33 +17,41 @@ export async function loadLiveStudents() {
   return listStudents();
 }
 
+/**
+ * cloud: 'ok' | 'local' (no Supabase keys) | 'missing' (run schema.sql) | 'error'
+ */
 export async function loadLiveUsage() {
   const students = await loadLiveStudents();
-  const week = await loadUsageByDay();
-  const meal = await loadSavedPlan();
-  const community = await loadCommunityState();
-  const liveCampus = CAMPUSES.map((label) => ({
-    label,
-    users: students.filter((row) => campusCode(row.campus) === label).length,
-  }));
-  const hasLive = students.length > 0;
-  const localMeals = meal ? 1 : 0;
-  const localCommunity = (community?.posts || []).length ? 1 : 0;
+  let summary = null;
+  let cloud = 'ok';
+
+  if (!isSupabaseConfigured || !supabase) {
+    cloud = 'local';
+  } else {
+    try {
+      const { data, error } = await supabase.rpc('admin_usage_summary');
+      if (error) cloud = isMissingTableError(error) ? 'missing' : 'error';
+      else summary = data;
+    } catch {
+      cloud = 'error';
+    }
+  }
+
+  const byDay = buildWeekSeries(summary?.active_by_day);
+  const byModule = buildFeatureSeries(summary?.features);
 
   return {
-    live: hasLive,
-    weekLive: Boolean(week),
+    cloud,
     students,
-    activeUsers: hasLive ? students.length : USAGE_BY_CAMPUS.reduce((sum, item) => sum + item.users, 0),
-    byCampus: hasLive ? liveCampus : USAGE_BY_CAMPUS,
-    byDay: week || USAGE_BY_DAY,
-    byModule: hasLive
-      ? [
-          { label: 'Workout', users: students.filter((row) => row.fitnessGoal || row.workoutLocation).length },
-          { label: 'Meals', users: Math.max(students.filter((row) => row.campus).length, localMeals) },
-          { label: 'Community', users: Math.max(Math.round(students.length * 0.6), localCommunity) },
-          { label: 'Mentors', users: students.filter((row) => /3|4|post/i.test(String(row.yearOfStudy || ''))).length },
-        ]
-      : USAGE_BY_MODULE,
+    totalStudents: Number(summary?.total_students ?? students.length) || 0,
+    signups7d: Number(summary?.signups_7d) || 0,
+    active7d: Number(summary?.active_7d) || 0,
+    byCampus: CAMPUSES.map((label) => ({
+      label,
+      value: students.filter((row) => campusCode(row.campus) === label).length,
+    })),
+    byDay,
+    byModule,
+    hasUsage: hasAnyUsage(byDay, byModule),
   };
 }

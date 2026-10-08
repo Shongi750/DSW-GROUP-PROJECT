@@ -6,9 +6,15 @@ import { GlassCard, GlassScreen } from '../components/glass';
 import PrimaryButton from '../components/button';
 import { GOALS } from '../data/goals';
 
+// Goal drives sets, reps, rest, and weekly volume in the plan engine.
 export default function GoalScreen({ navigation }) {
   const { profile, updateProfile } = useApp();
   const [goal, setGoal] = useState(profile.goal || 'hypertrophy');
+
+  function goNext() {
+    updateProfile({ goal });
+    navigation.navigate('Equipment');
+  }
 
   return (
     <GlassScreen>
@@ -19,33 +25,28 @@ export default function GoalScreen({ navigation }) {
         template.
       </Text>
 
-      {GOALS.map((item) => (
-        <GlassCard
-          key={item.id}
-          className={`mb-3 ${goal === item.id ? 'border-accent' : ''}`}
-          onPress={() => setGoal(item.id)}
-        >
-          <View className="flex-row items-center gap-3">
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/20">
-              <Ionicons name={item.icon} size={20} color="#FF6A00" />
+      {GOALS.map(function (item) {
+        return (
+          <GlassCard
+            key={item.id}
+            className={`mb-3 ${goal === item.id ? 'border-accent' : ''}`}
+            onPress={function () { setGoal(item.id); }}
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/20">
+                <Ionicons name={item.icon} size={20} color="#FF6A00" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-lg font-extrabold text-ink">{item.name}</Text>
+                <Text className="mt-1 leading-5 text-muted">{item.blurb}</Text>
+              </View>
             </View>
-            <View className="flex-1">
-              <Text className="text-lg font-extrabold text-ink">{item.name}</Text>
-              <Text className="mt-1 leading-5 text-muted">{item.blurb}</Text>
-            </View>
-          </View>
-        </GlassCard>
-      ))}
+          </GlassCard>
+        );
+      })}
 
       <View className="mt-4">
-        <PrimaryButton
-          title="NEXT"
-          icon="arrow-forward"
-          onPress={() => {
-            updateProfile({ goal });
-            navigation.navigate('Equipment');
-          }}
-        />
+        <PrimaryButton title="NEXT" icon="arrow-forward" onPress={goNext} />
       </View>
     </GlassScreen>
   );

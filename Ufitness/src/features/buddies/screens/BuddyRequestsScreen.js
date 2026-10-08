@@ -1,10 +1,12 @@
-// screens/BuddyRequestsScreen.js
-// FR-34: allow students to accept or reject buddy requests
-
+/**
+ * BuddyRequestsScreen (FR-34) — incoming buddy requests for the signed-in student.
+ * respondToBuddyRequest updates Supabase buddy_requests (or local cache); parent can refresh matched list on accept.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import BuddyCard from '../components/BuddyCard';
 import { getIncomingRequests, respondToBuddyRequest } from '../services/buddyService';
+import { useSyncTick } from '../../../lib/autoSync';
 import { useTheme } from '../../../context/ThemeContext';
 
 const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
@@ -25,9 +27,11 @@ export default function BuddyRequestsScreen({ currentStudent, onBuddyMatched }) 
     setLoading(false);
   }, [currentStudent.id]);
 
+  // syncTick goes up after the phone reconnects and the offline queue is sent.
+  const syncTick = useSyncTick();
   useEffect(() => {
     loadRequests();
-  }, [loadRequests]);
+  }, [loadRequests, syncTick]);
 
   const handleRespond = async (requestId, decision) => {
     await respondToBuddyRequest(requestId, decision);

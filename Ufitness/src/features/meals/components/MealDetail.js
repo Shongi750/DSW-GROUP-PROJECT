@@ -15,11 +15,19 @@ import { colors, radius, display } from '../constants/theme';
 import { useTheme } from '../../../context/ThemeContext';
 import { scaleMeal, stapleLabel } from '../lib/portions';
 import SafeImage from '../../../components/SafeImage';
+import DownloadButton from '../../../components/DownloadButton';
+import { useDownload } from '../../../lib/downloads/useDownload';
+import { useLocalMedia } from '../../../lib/downloads/downloadsStore';
+import { downloadRecipe, recipeRefId } from '../lib/mealDownloads';
 
-export default function MealDetail({ meal, products, goal, onChangeGoal, onSwap, onCookOwn, onShare, onClose }) {
+export default function MealDetail({ meal, products, goal, onChangeGoal, onSwap, onCookOwn, onShare, onClose, offlineNote }) {
   const insets = useSafeAreaInsets();
-  const { colors: theme } = useTheme();
+  const { colors: theme, isDark } = useTheme();
   const recipe = meal ? scaleMeal(meal.recipeId, goal) : null;
+  const image = useLocalMedia(meal?.image); // saved photo when the recipe is downloaded
+  // Download for offline: recipe + live product names, photo and cook video (thumbnail for YouTube).
+  const dl = useDownload('recipe', recipeRefId(meal));
+  const download = () => dl.run(() => downloadRecipe({ meal, goal, products }));
 
   return (
     <Modal visible={Boolean(meal)} animationType="slide" onRequestClose={onClose}>
@@ -36,12 +44,15 @@ export default function MealDetail({ meal, products, goal, onChangeGoal, onSwap,
             style={styles.scroll}
             contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 }]}
           >
-            <SafeImage uri={meal.image} style={styles.image} resizeMode="cover" />
+            <SafeImage uri={image} style={styles.image} resizeMode="cover" />
+            {offlineNote ? <Text style={[styles.meta, { color: theme.muted, marginBottom: 8 }]}>{offlineNote}</Text> : null}
             <Text style={styles.slot}>{meal.slot}</Text>
             <Text style={[styles.title, { color: theme.text }]}>{meal.title}</Text>
             <Text style={[styles.meta, { color: theme.muted }]}>
               {recipe.time} · {recipe.carbs}g carbs · {recipe.protein}g protein
             </Text>
+
+            <DownloadButton dl={dl} onDownload={download} light={!isDark} style={{ marginTop: 12 }} />
 
             <GoalPicker value={goal} onChange={onChangeGoal} />
 
@@ -90,7 +101,7 @@ export default function MealDetail({ meal, products, goal, onChangeGoal, onSwap,
               </Pressable>
             ) : null}
             <Pressable onPress={() => onCookOwn?.(meal)} style={styles.ownBtn}>
-              <Text style={styles.ownText}>I'll cook my own — check food classes</Text>
+              <Text style={styles.ownText}>I’ll cook my own — check food classes</Text>
             </Pressable>
           </ScrollView>
         ) : null}

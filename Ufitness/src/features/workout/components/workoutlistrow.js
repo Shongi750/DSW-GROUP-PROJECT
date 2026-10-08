@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalMedia } from '../../../lib/downloads/downloadsStore';
 import { useTheme } from '../../../context/ThemeContext';
 
 // Inspo difficulty chips: Easy orange, Medium yellow, Hard red.
@@ -18,7 +19,8 @@ function levelTone(level) {
   return { label: level || 'Train', bg: 'rgba(255,106,0,0.18)', color: '#FF6A00' };
 }
 
-export default function WorkoutListRow({ image, title, meta, level, onPress }) {
+export default function WorkoutListRow({ image: remoteImage, title, meta, level, onPress }) {
+  const image = useLocalMedia(remoteImage); // saved file when the workout is downloaded
   const { colors } = useTheme();
   const tone = levelTone(level);
   return (

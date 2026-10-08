@@ -1,21 +1,23 @@
-/** Default privacy prefs — opt-out of discovery / field visibility. */
+// Privacy toggles stored on the profile.
+// Default is "visible" — students turn things OFF if they want.
+
 export const DEFAULT_PRIVACY = {
-  /** Appear in buddy finder / campus student list */
-  discoverable: true,
-  /** Show fitness goal on public profile */
-  showGoal: true,
-  /** Show campus */
+  discoverable: true, // show up in buddy finder
+  showGoal: true, // show fitness goal on public profile
   showCampus: true,
-  /** Show beginner / intermediate / advanced */
-  showExperience: true,
-  /** Mentors may see progress check-ins you share via Hub */
-  shareProgressWithMentor: true,
-  /** Appear on Find a Mentor roster when you are a mentor */
-  appearAsMentor: true,
+  showExperience: true, // beginner / intermediate / advanced
+  shareProgressWithMentor: true, // mentors can see check-ins
+  appearAsMentor: true, // show on Find a Mentor if you are a mentor
 };
 
+// Fill in any missing keys with the defaults above.
+// If a value is missing we treat it as "on" (true).
 export function normalizePrivacy(input) {
-  const raw = input && typeof input === 'object' ? input : {};
+  let raw = {};
+  if (input && typeof input === 'object') {
+    raw = input;
+  }
+
   return {
     discoverable: raw.discoverable !== false,
     showGoal: raw.showGoal !== false,

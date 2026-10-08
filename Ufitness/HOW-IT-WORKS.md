@@ -360,13 +360,15 @@ There used to be **multiple Firebase apps/projects** plus local AsyncStorage. Co
 2. **One login** — Register/Login call Firebase Auth. Outer `AppContext` uid = Workout uid. Workout does not auto-guest after UFitness login. Sign out clears both. **Done.**
 3. **Cloud profile** — onboarding lives under `users/{uid}` (plus `students/{uid}` for buddies). Device cache stays for offline. **Done.**
 4. **Sync the local keys** — meals plan, community feed, reminders write to `mealPlans/{uid}`, `communityState/{uid}`, `reminders/{uid}` when signed in; AsyncStorage stays the cache. **Done.**
+5. **Offline queue** — if a cloud save fails because the phone is offline, the latest copy waits in `src/lib/syncQueue.js` and is sent when NetInfo (web: online/offline events) says the phone is back, or when the app returns to the foreground. The sync pill shows Offline → Syncing… → Synced. **Done.**
+6. **Downloads** — Profile → Downloads (or the download icon on Home). Workouts, the week's meal plan, recipes and the grocery list can be saved for offline use; pictures, mp4 cook videos and the grocery PDF are saved as files on the phone (`src/lib/downloads/`). Screens use the downloaded copy when there is no connection. **Done.**
 5. **Rules** — `firestore.rules` in the Ufitness folder: owner-only on users/meals/community/reminders; signed-in read on students; authenticated buddy requests. Deploy with Firebase CLI. **In repo.**
 6. **Leave for later** — UJ enrolment API, real NSFAS balance, OS push, Play/App Store. Mentors/buddies can stay seeded until Auth works.
 
 Env keys (never commit the values):
 
 ```
-EXPO_PUBLIC_LOYALTYHUB_KEY=          # grocery shelf prices
+# LoyaltyHub key: server secret for the loyaltyhub-proxy Edge Function (DEPLOY-EDGE-FUNCTION.md)
 EXPO_PUBLIC_FIREBASE_API_KEY=
 EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=
 EXPO_PUBLIC_FIREBASE_PROJECT_ID=
@@ -384,7 +386,7 @@ Restart Expo after saving `.env`. Without Firebase keys the app still runs local
 - Community groups and challenges stay seeded (the feed itself persists)
 - Mentors are a static list
 - Buddy data is local service data, not UJ live enrolment
-- Meal “live prices” need a LoyaltyHub key (`EXPO_PUBLIC_LOYALTYHUB_KEY`) or they stay estimated
+- Meal “live prices” need the `loyaltyhub-proxy` Edge Function deployed with the `LOYALTYHUB_KEY` secret, or they stay estimated
 - Firestore rules live in `firestore.rules` — deploy from the Ufitness folder with Firebase CLI (`firebase deploy --only firestore:rules`) after you are logged into the project
 - Real Power BI embed, SMTP, and authorized domains stay in the Firebase / Microsoft consoles
 

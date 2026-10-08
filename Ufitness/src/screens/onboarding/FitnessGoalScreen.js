@@ -28,6 +28,13 @@ import { personName } from '../../lib/ujEmail';
 import { weeklyForFunding } from '../../features/meals/lib/budget';
 import { loadSavedPlan, saveSavedPlan } from '../../features/meals/lib/persist';
 
+/*
+  Combined onboarding + profile edit screen.
+  Collects goal, campus, course, photo, and food budget in one scroll form,
+  then calls completeOnboarding (first time) or updateFields (edit from profile).
+  Smaller pickers live at the bottom: SelectField, CourseSearchField, PhotoPicker, BudgetSlider.
+*/
+
 const BRAND = '#FF6A00';
 const ACCENT = '#FF6A00';
 const TEXT = '#FFFFFF';
@@ -65,19 +72,52 @@ const CAMPUSES = [
 ];
 
 function parseBudget(data) {
-  if (Number(data?.foodBudgetAmount) > 0) return Number(data.foodBudgetAmount);
-  const match = String(data?.foodBudget || '').match(/(\d[\d,]*)/g);
-  if (match?.length) return Number(match[match.length - 1].replace(',', ''));
+  if (data && Number(data.foodBudgetAmount) > 0) {
+    return Number(data.foodBudgetAmount);
+  }
+  const budgetText = (data && data.foodBudget) || '';
+  const match = String(budgetText).match(/(\d[\d,]*)/g);
+  if (match && match.length) {
+    const last = match[match.length - 1].replace(',', '');
+    return Number(last);
+  }
   return 1500;
 }
 
 function photoModeFromUri(uri) {
-  if (!uri) return '';
-  return PROFILE_AVATARS.some((item) => item.uri === uri) ? 'avatar' : 'upload';
+  if (!uri) {
+    return '';
+  }
+  const isAvatar = PROFILE_AVATARS.some(function (item) {
+    return item.uri === uri;
+  });
+  if (isAvatar) {
+    return 'avatar';
+  }
+  return 'upload';
 }
 
 function formatBudget(amount) {
-  return `R${amount}`;
+  return 'R' + amount;
+}
+
+function goalLabelForId(goalId) {
+  const found = GOALS.find(function (item) {
+    return item.id === goalId;
+  });
+  if (found) {
+    return found.label;
+  }
+  return 'General fitness';
+}
+
+function formatMissingList(missing) {
+  if (missing.length === 1) {
+    return missing[0];
+  }
+  const head = missing.slice(0, -1).join(', ');
+  const tail = missing[missing.length - 1];
+  return head + ' and ' + tail;
 }
 
 export default function FitnessGoalScreen({
@@ -104,11 +144,11 @@ export default function FitnessGoalScreen({
 
   const isEditing = Boolean(editing || data?.onboardingComplete);
 
-  const payload = () => {
+  function buildPayload() {
     const weekly = weeklyForFunding(budget);
     return {
       name: personName(name),
-      fitnessGoal: GOALS.find((item) => item.id === goal)?.label || 'General fitness',
+      fitnessGoal: goalLabelForId(goal),
       experienceLevel: experience,
       workoutPreference: location,
       campus,
@@ -124,48 +164,69 @@ export default function FitnessGoalScreen({
       fundingType: funding,
       daysPerWeek: 4,
     };
-  };
+  }
 
-  const missingFields = () => {
+  function missingFields() {
     const missing = [];
-    if (!personName(name)) missing.push('your name');
-    if (!goal) missing.push('a fitness goal');
-    if (!experience) missing.push('your experience level');
-    if (!location) missing.push('a preferred location');
-    if (!course) missing.push('your UJ course');
-    if (!yearOfStudy) missing.push('your year of study');
-    if (!avatarUrl) missing.push('a profile picture');
-    if (!funding) missing.push('a funding source');
+    if (!personName(name)) {
+      missing.push('your name');
+    }
+    if (!goal) {
+      missing.push('a fitness goal');
+    }
+    if (!experience) {
+      missing.push('your experience level');
+    }
+    if (!location) {
+      missing.push('a preferred location');
+    }
+    if (!course) {
+      missing.push('your UJ course');
+    }
+    if (!yearOfStudy) {
+      missing.push('your year of study');
+    }
+    if (!avatarUrl) {
+      missing.push('a profile picture');
+    }
+    if (!funding) {
+      missing.push('a funding source');
+    }
     return missing;
-  };
+  }
 
-  const finish = async (requireGoal) => {
+  async function finish(requireGoal) {
     if (requireGoal) {
       const missing = missingFields();
       if (missing.length) {
-        const list =
-          missing.length === 1
-            ? missing[0]
-            : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
-        setNotice(`Choose ${list} before continuing.`);
+        const list = formatMissingList(missing);
+        setNotice('Choose ' + list + ' before continuing.');
         return;
       }
     }
     setNotice('');
     try {
-      const patch = payload();
+      const patch = buildPayload();
       const saved = await loadSavedPlan();
-      await saveSavedPlan({ ...(saved || {}), budget: patch.weeklyFoodBudget });
+      const planBase = saved || {};
+      await saveSavedPlan({ ...planBase, budget: patch.weeklyFoodBudget });
       if (isEditing) {
-        updateFields?.(patch);
-        if (navigation.canGoBack()) navigation.goBack();
+        if (updateFields) {
+          updateFields(patch);
+        }
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        }
         return;
       }
-      await completeOnboarding?.(patch);
+      if (completeOnboarding) {
+        await completeOnboarding(patch);
+      }
     } catch (error) {
-      setNotice(error?.message || 'Could not save setup. Try again.');
+      const message = (error && error.message) || 'Could not save setup. Try again.';
+      setNotice(message);
     }
-  };
+  }
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]} edges={['top']}>
@@ -500,7 +561,7 @@ function CourseSearchField({ label, placeholder, value, onSelect }) {
 function PhotoPicker({ avatarUrl, photoMode, onMode, onPickUri }) {
   const { colors } = useTheme();
 
-  const pickOwnPhoto = async () => {
+  async function pickOwnPhoto() {
     onMode('upload');
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -513,10 +574,14 @@ function PhotoPicker({ avatarUrl, photoMode, onMode, onPickUri }) {
       allowsEditing: true,
       aspect: [1, 1],
     });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      onPickUri(result.assets[0].uri);
+    if (result.canceled) {
+      return;
     }
-  };
+    const assets = result.assets;
+    if (assets && assets[0] && assets[0].uri) {
+      onPickUri(assets[0].uri);
+    }
+  }
 
   return (
     <View style={styles.fieldBlock}>
@@ -584,19 +649,26 @@ function BudgetSlider({ value, onChange }) {
   const leftRef = useRef(0);
   const ratio = Math.min(1, Math.max(0, (value - min) / (max - min)));
 
-  const applyPageX = (pageX) => {
+  function applyPageX(pageX) {
     const width = Math.max(widthRef.current, 1);
     const x = Math.min(width, Math.max(0, pageX - leftRef.current));
     const next = Math.round((min + (x / width) * (max - min)) / 50) * 50;
     onChange(Math.min(max, Math.max(min, next)));
-  };
+  }
 
-  const measure = () => {
-    trackRef.current?.measureInWindow?.((x, _y, width) => {
-      if (typeof x === 'number') leftRef.current = x;
-      if (width) widthRef.current = width;
-    });
-  };
+  function measure() {
+    const track = trackRef.current;
+    if (track && track.measureInWindow) {
+      track.measureInWindow(function (x, _y, width) {
+        if (typeof x === 'number') {
+          leftRef.current = x;
+        }
+        if (width) {
+          widthRef.current = width;
+        }
+      });
+    }
+  }
 
   const pan = useMemo(
     () =>

@@ -1,4 +1,4 @@
-// Pure profile-merge rules, deliberately free of Firebase or React Native imports so they
+// Pure profile-merge rules, deliberately free of backend or React Native imports so they
 // can be reasoned about (and tested) on their own.
 
 function uniqueStrings(...lists) {

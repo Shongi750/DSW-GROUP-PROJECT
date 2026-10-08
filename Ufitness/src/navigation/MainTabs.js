@@ -14,6 +14,7 @@ import { showNotificationsSheet } from '../lib/reminders';
 import { nestedStackProps, openNested, openTab } from './nav';
 import { DEFAULT_AVATAR } from '../data/profileAvatars';
 import { hapticSelection } from '../lib/haptics';
+import { trackFeature } from '../lib/usagePing';
 
 function BlurTabBarBackground() {
   if (Platform.OS === 'web') {
@@ -58,6 +59,7 @@ function ProfileHome({ navigation }) {
       onEatAllergies={() => navigation.navigate('DietPreferences')}
       onNotifications={showNotificationsSheet}
       onPrivacySecurity={() => navigation.navigate('PrivacySecurity')}
+      onDownloads={() => navigation.navigate('Downloads')}
       onLogout={logout}
       onDeleteAccount={deleteAccount}
       onOpenAdmin={canSeeCampusAdmin ? () => navigation.navigate('AdminHome') : undefined}
@@ -92,6 +94,16 @@ function ProfileTab() {
         options={{ headerShown: true, title: 'Privacy & security' }}
       />
       <ProfileStackNav.Screen
+        name="Downloads"
+        getComponent={() => require('../screens/profile/DownloadsScreen').default}
+        options={{ headerShown: true, title: 'Downloads' }}
+      />
+      <ProfileStackNav.Screen
+        name="BlockedUsers"
+        getComponent={() => require('../screens/profile/BlockedUsersScreen').default}
+        options={{ headerShown: true, title: 'Blocked users' }}
+      />
+      <ProfileStackNav.Screen
         name="AdminHome"
         getComponent={() => require('../features/admin/screens/AdminDashboardScreen').default}
         options={{ headerShown: true, title: 'Campus Admin' }}
@@ -105,9 +117,16 @@ function ProfileTab() {
   );
 }
 
-function MealsTab({ navigation }) {
+function MealsTab({ navigation, route }) {
   const MealPlannerScreen = require('../features/meals/screens/MealPlannerScreen').default;
-  return <MealPlannerScreen onOpenProfile={() => openTab(navigation, 'Profile')} />;
+  // openDownload: set by Profile → Downloads to open a downloaded plan / recipe / list here.
+  return (
+    <MealPlannerScreen
+      onOpenProfile={() => openTab(navigation, 'Profile')}
+      openDownload={route?.params?.openDownload}
+      openAt={route?.params?.at}
+    />
+  );
 }
 
 function WorkoutTab({ navigation }) {
@@ -151,6 +170,12 @@ export default function MainTabs() {
   const { colors } = useTheme();
   return (
     <Tab.Navigator
+      // Count which tabs are used (one row per tab per day) for the admin dashboard
+      screenListeners={({ route }) => ({
+        focus: () => {
+          trackFeature(route.name);
+        },
+      })}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.accent,

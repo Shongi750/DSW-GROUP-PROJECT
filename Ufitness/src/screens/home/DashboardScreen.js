@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -19,6 +20,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { PressScale, PulseDot, useCountUp } from '../../components/motion';
 import { gymStatus, liveFeed } from '../../features/campus/livePulse';
+import {
+  checkInCounts as loadCheckInCounts,
+  tryGymCheckIn,
+} from '../../features/campus/gymCheckIn';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -38,22 +43,68 @@ import { queueWorkoutAction } from '../../features/workout/lib/pendingStart';
 import { listWorkouts, imageForWorkout } from '../../features/workout/data/readyWorkouts';
 import { StartCard, StartCardRow } from '../../components/StartCard';
 import { promptDueReminders, showNotificationsSheet } from '../../lib/reminders';
-import { openTab } from '../../navigation/nav';
+
+// Home / Dashboard
+// Sections (top → bottom):
+// 1. Greeting + today workout card
+// 2. Week pulse / upcoming strip
+// 3. Budget + kcal stats
+// 4. Quick-start ready workouts
+// 5. Today’s meal suggestion
+// 6. Campus pulse + gym check-in (fixed pins, not tracking)
+//
+// Starting a workout writes a small “pending action” to AsyncStorage,
+// then we switch to the Workout tab — Workout Home reads it and opens PreStart.
+import { openNested, openTab } from '../../navigation/nav';
 import { DEFAULT_AVATAR } from '../../data/profileAvatars';
 import { personName } from '../../lib/ujEmail';
 import { hapticMedium } from '../../lib/haptics';
 import { getMatchedBuddies } from '../../features/buddies/services/buddyService';
 import { syncAchievements } from '../../lib/achievements';
 import { planAdaptationMessage } from '../../features/workout/data/planAdaptation';
+import SyncStatus from '../../components/SyncStatus';
+
+/*
+ * Home tab — one screen so judges see meals + workout + campus in one place.
+ * Top bar → hero workout → week streak → budget stats → quick workouts → meal → gym pulse.
+ */
 
 const HERO_IMAGE = require('../../../assets/images/hero-strength.png');
 const MEAL_FALLBACK =
   'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80';
 
-function formatHeroDate(date = new Date()) {
-  return date
+function formatHeroDate(date) {
+  const d = date || new Date();
+  return d
     .toLocaleDateString('en-GB', { weekday: 'long', month: 'short', day: 'numeric' })
     .toUpperCase();
+}
+
+function upcomingWorkoutLine(todayWorkout, workoutTitle) {
+  if (!todayWorkout) {
+    return 'Rest day · recovery';
+  }
+  if (todayWorkout.type === 'train') {
+    return 'Workout · ' + workoutTitle;
+  }
+  if (todayWorkout.type === 'done') {
+    return 'Workout done for today';
+  }
+  return 'Rest day · recovery';
+}
+
+function countWeekDaysWithActivity(week) {
+  let count = 0;
+  const days = week || [];
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i];
+    const sessions = day.sessions || 0;
+    const minutes = day.minutes || 0;
+    if (sessions > 0 || minutes > 0) {
+      count = count + 1;
+    }
+  }
+  return count;
 }
 
 export default function DashboardScreen({ navigation }) {
@@ -68,6 +119,10 @@ export default function DashboardScreen({ navigation }) {
   const [buddyName, setBuddyName] = useState('');
   const [adaptation, setAdaptation] = useState(null);
   const [milestoneCount, setMilestoneCount] = useState(0);
+  // fresh gym check-ins (last hour) bump the Campus pulse %
+  const [checkCounts, setCheckCounts] = useState({});
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [checkMsg, setCheckMsg] = useState('');
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -99,7 +154,8 @@ export default function DashboardScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      (async () => {
+
+      async function refreshHome() {
         const saved = await loadSavedPlan();
         const mealSummary = buildTodayMealSummary({
           saved,
@@ -109,24 +165,61 @@ export default function DashboardScreen({ navigation }) {
           dietFilters: profile.dietFilters,
         });
         const workoutSummary = await loadTodayWorkoutSummary();
-        const eatenToday = await loadEatenToday(user?.id);
+        const userId = user && user.id;
+        const eatenToday = await loadEatenToday(userId);
         const weekPulse = await loadWeekPulse();
-        const buddies = user?.id ? await getMatchedBuddies(user.id).catch(() => []) : [];
-        const history = workoutSummary?.history || [];
-        const weekDone = weekPulse?.week?.filter((d) => d.done)?.length || 0;
+        const counts = await loadCheckInCounts(Date.now());
+
+        let buddies = [];
+        if (userId) {
+          try {
+            buddies = await getMatchedBuddies(userId);
+          } catch (err) {
+            buddies = [];
+          }
+        }
+
+        const history =
+          workoutSummary && workoutSummary.history ? workoutSummary.history : [];
+        let weekDone = 0;
+        const pulseWeek = weekPulse && weekPulse.week ? weekPulse.week : [];
+        for (let i = 0; i < pulseWeek.length; i++) {
+          if (pulseWeek[i].done) {
+            weekDone = weekDone + 1;
+          }
+        }
         const weekTotal = profile.daysPerWeek || 4;
         const ach = await syncAchievements({ history, weekDone, weekTotal });
-        if (!alive) return;
+
+        if (!alive) {
+          return;
+        }
+
         setTodayMeal(mealSummary);
         setTodayWorkout(workoutSummary);
         setEaten(eatenToday);
         setPulse(weekPulse);
-        setBuddyName(buddies[0]?.name || '');
+        setCheckCounts(counts);
+
+        const firstBuddy = buddies[0];
+        setBuddyName(firstBuddy && firstBuddy.name ? firstBuddy.name : '');
+
         setAdaptation(planAdaptationMessage(history));
-        setMilestoneCount(ach.badges.filter((b) => b.earned || b.unlockedAt).length);
+
+        let badgesEarned = 0;
+        for (let j = 0; j < ach.badges.length; j++) {
+          const b = ach.badges[j];
+          if (b.earned || b.unlockedAt) {
+            badgesEarned = badgesEarned + 1;
+          }
+        }
+        setMilestoneCount(badgesEarned);
         promptDueReminders();
-      })();
-      return () => {
+      }
+
+      refreshHome();
+
+      return function cleanup() {
         alive = false;
       };
     }, [
@@ -134,17 +227,22 @@ export default function DashboardScreen({ navigation }) {
       profile.fundingType,
       profile.dietFilters,
       profile.daysPerWeek,
-      user?.id,
+      user && user.id,
     ])
   );
 
   const calories = eaten.kcal;
-  const activeMin = todayWorkout?.minutes ?? 0;
+  const activeMin =
+    todayWorkout && todayWorkout.minutes != null ? todayWorkout.minutes : 0;
   const loggedMeal = eaten.items[eaten.items.length - 1];
-  const featured = loggedMeal || todayMeal?.featured;
-  const workoutTitle = todayWorkout?.title || "Today's session";
-  const workoutMeta = todayWorkout?.meta || 'Not started';
-  const workoutBadge = todayWorkout?.badge || 'STRENGTH';
+  const featured =
+    loggedMeal || (todayMeal && todayMeal.featured ? todayMeal.featured : null);
+  const workoutTitle =
+    todayWorkout && todayWorkout.title ? todayWorkout.title : "Today's session";
+  const workoutMeta =
+    todayWorkout && todayWorkout.meta ? todayWorkout.meta : 'Not started';
+  const workoutBadge =
+    todayWorkout && todayWorkout.badge ? todayWorkout.badge : 'STRENGTH';
   const mealTag = loggedMeal ? 'LOGGED' : 'SUGGESTED';
   const mealTitle = featured?.title || 'No meal logged yet';
   const mealKcal = featured?.kcal ?? 0;
@@ -156,26 +254,57 @@ export default function DashboardScreen({ navigation }) {
   const budgetCount = useCountUp(foodLeft ?? 0);
   const kcalCount = useCountUp(calories);
   const minCount = useCountUp(activeMin);
-  const gyms = gymStatus(now);
+  const gyms = gymStatus(now, checkCounts);
   const feed = liveFeed(now);
 
-  const startWorkout = async () => {
+  async function startWorkout() {
     hapticMedium();
-    if (todayWorkout?.type === 'train') {
+    if (todayWorkout && todayWorkout.type === 'train') {
       await queueWorkoutAction({ startToday: true });
     }
     openTab(navigation, 'Workout');
-  };
+  }
 
-  const startReadyFromHome = async (workout) => {
+  // GPS near a fixed UJ gym pin → check-in. Web / denied → campus preference.
+  async function onGymCheckIn() {
+    if (checkingIn) return;
+    setCheckingIn(true);
     hapticMedium();
+    try {
+      const result = await tryGymCheckIn({
+        campusPreference: profile.campus || 'APK',
+        allowManual: true,
+      });
+      if (result && result.ok) {
+        const counts = await loadCheckInCounts(Date.now());
+        setCheckCounts(counts);
+        setCheckMsg(result.message || 'Checked in.');
+        Alert.alert('Gym check-in', result.message || 'Checked in.');
+      } else {
+        const msg =
+          (result && result.message) || 'Could not check in right now.';
+        setCheckMsg(msg);
+        Alert.alert('Gym check-in', msg);
+      }
+    } catch (err) {
+      Alert.alert('Gym check-in', 'Something went wrong. Try again.');
+    }
+    setCheckingIn(false);
+  }
+
+  async function startReadyFromHome(workout) {
+    hapticMedium();
+    const moveCount =
+      workout.exerciseIds && workout.exerciseIds.length
+        ? workout.exerciseIds.length
+        : 0;
     await queueWorkoutAction({
       preStart: true,
       title: workout.name,
       minutes: workout.minutes,
       level: workout.level,
       focus: workout.focus,
-      moves: workout.exerciseIds?.length || 0,
+      moves: moveCount,
       exerciseIds: workout.exerciseIds,
       programId: workout.id,
       workoutId: workout.id,
@@ -183,29 +312,30 @@ export default function DashboardScreen({ navigation }) {
       image: imageForWorkout(workout),
     });
     openTab(navigation, 'Workout');
-  };
+  }
 
-  const openProgress = async () => {
+  async function openProgress() {
     await queueWorkoutAction({ openInsights: true });
     openTab(navigation, 'Workout');
-  };
+  }
 
-  const weekDoneCount = (pulse.week || []).filter(
-    (day) => (day.sessions || 0) > 0 || (day.minutes || 0) > 0
-  ).length;
+  const weekDoneCount = countWeekDaysWithActivity(pulse.week);
   const weekTarget = profile.daysPerWeek || 4;
 
-  const logSuggestedMeal = async () => {
-    const suggestion = todayMeal?.featured;
-    if (!suggestion) return;
-    const next = await logEatenMeal(user?.id, {
-      id: `${todayMeal.dayId}-${suggestion.title}`,
+  async function logSuggestedMeal() {
+    const suggestion = todayMeal && todayMeal.featured ? todayMeal.featured : null;
+    if (!suggestion) {
+      return;
+    }
+    const userId = user && user.id;
+    const next = await logEatenMeal(userId, {
+      id: todayMeal.dayId + '-' + suggestion.title,
       title: suggestion.title,
       kcal: suggestion.kcal,
       protein: suggestion.protein,
     });
     setEaten(next);
-  };
+  }
 
   const glass = PHOTO_GLASS;
   const fg = '#FFFFFF';
@@ -223,7 +353,8 @@ export default function DashboardScreen({ navigation }) {
           scrollEventThrottle={16}
         >
           <View style={styles.topBar}>
-            <TouchableOpacity onPress={() => openTab(navigation, 'Profile')}>
+            {/* same width as the two icons on the right, so UFITNESS stays centred */}
+            <TouchableOpacity onPress={() => openTab(navigation, 'Profile')} style={{ width: 76 }}>
               <Image
                 source={{ uri: profile.avatarUrl || DEFAULT_AVATAR }}
                 style={[styles.avatarImage, { borderColor: 'rgba(255,255,255,0.25)' }]}
@@ -233,10 +364,24 @@ export default function DashboardScreen({ navigation }) {
               <Text style={[styles.brandName, { color: fg }]}>U</Text>
               <Text style={[styles.brandName, { color: colors.accent }]}>FITNESS</Text>
             </View>
-            <TouchableOpacity activeOpacity={0.7} style={styles.notificationBtn} onPress={showNotificationsSheet}>
-              <Ionicons name="notifications-outline" size={22} color={fg} />
-            </TouchableOpacity>
+            <View style={styles.headerIcons}>
+              {/* Downloads for offline use (lives under Profile → Downloads) */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.notificationBtn}
+                onPress={() => openNested(navigation, ['Profile', 'Downloads'])}
+                accessibilityLabel="Downloads"
+              >
+                <Ionicons name="download-outline" size={22} color={fg} />
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.7} style={styles.notificationBtn} onPress={showNotificationsSheet}>
+                <Ionicons name="notifications-outline" size={22} color={fg} />
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Where your data is saved: Synced / Saving… / phone only / cloud not set up */}
+          <SyncStatus style={{ marginBottom: 10 }} />
 
           <Animated.View entering={FadeInDown.duration(480)}>
             <Text style={[styles.dateText, { color: soft }]}>{formatHeroDate()}</Text>
@@ -301,11 +446,7 @@ export default function DashboardScreen({ navigation }) {
           <Animated.View entering={FadeInDown.delay(200).duration(520)} style={[styles.upcoming, glass]}>
             <Text style={[styles.upcomingKicker, { color: colors.accent }]}>UPCOMING</Text>
             <Text style={[styles.upcomingLine, { color: fg }]}>
-              {todayWorkout?.type === 'train'
-                ? `Workout · ${workoutTitle}`
-                : todayWorkout?.type === 'done'
-                  ? 'Workout done for today'
-                  : 'Rest day · recovery'}
+              {upcomingWorkoutLine(todayWorkout, workoutTitle)}
             </Text>
             <Text style={[styles.upcomingSub, { color: soft }]}>
               Meals · {foodLeft != null ? `R${Math.round(foodLeft)} left this week` : 'Open plan'}
@@ -414,6 +555,24 @@ export default function DashboardScreen({ navigation }) {
                 </View>
               ))}
             </View>
+            <TouchableOpacity
+              style={[styles.checkInBtn, { borderColor: colors.accent }]}
+              onPress={onGymCheckIn}
+              disabled={checkingIn}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="location-outline"
+                size={16}
+                color={colors.accent}
+              />
+              <Text style={[styles.checkInBtnText, { color: colors.accent }]}>
+                {checkingIn ? 'Checking in…' : 'Check in at gym'}
+              </Text>
+            </TouchableOpacity>
+            {checkMsg ? (
+              <Text style={[styles.checkInMsg, { color: soft }]}>{checkMsg}</Text>
+            ) : null}
             <View style={styles.pulseFeed}>
               {gyms.every((gym) => gym.occupancy < 25) ? (
                 <Text style={[styles.pulseQuiet, { color: colors.accent }]}>
@@ -483,6 +642,10 @@ const styles = StyleSheet.create({
     ...display,
     fontSize: 22,
     letterSpacing: 1.2,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   notificationBtn: {
     width: 38,
@@ -842,5 +1005,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.2,
     marginBottom: 6,
+  },
+  checkInBtn: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  checkInBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  checkInMsg: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

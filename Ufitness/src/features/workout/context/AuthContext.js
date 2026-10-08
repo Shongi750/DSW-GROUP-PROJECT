@@ -58,7 +58,6 @@ export function AuthProvider({ children }) {
       authReady: !main.booting,
       busy,
       authAvailable: Boolean(user),
-      missingFirebaseKeys: [],
       signUp,
       signIn,
       signOut,

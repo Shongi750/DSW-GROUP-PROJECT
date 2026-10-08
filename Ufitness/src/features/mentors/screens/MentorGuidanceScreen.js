@@ -1,3 +1,7 @@
+/**
+ * MentorGuidanceScreen — short weekly notes stored on the mentorship record.
+ * addGuidanceNote writes to mentorRequests; mentee sees history on MenteeProgress.
+ */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
@@ -56,8 +60,14 @@ export default function MentorGuidanceScreen({ route, navigation }) {
   const send = async () => {
     if (!selected?.id || !text.trim()) return;
     setSaving(true);
-    const updated = await addGuidanceNote(selected.id, text, profile.name || 'Mentor');
-    setSaving(false);
+    let updated = null;
+    try {
+      updated = await addGuidanceNote(selected.id, text, profile.name || 'Mentor');
+    } catch (error) {
+      Alert.alert('Could not save note', error.message);
+    } finally {
+      setSaving(false);
+    }
     if (!updated) return;
     setText('');
     await reload();
@@ -160,7 +170,7 @@ export default function MentorGuidanceScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
-  list: { padding: spacing.section, paddingBottom: 48 },
+  list: { padding: spacing.section, paddingBottom: 100 },
   title: { ...display, fontSize: 28, color: '#FFFFFF', marginBottom: 6 },
   copy: { color: '#C9C9C9', marginBottom: 16, fontSize: 14 },
   label: { color: '#FFB27A', fontWeight: '800', fontSize: 12, letterSpacing: 0.8, marginBottom: 8 },

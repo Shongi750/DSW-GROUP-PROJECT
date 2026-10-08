@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, radius, display } from '../../../context/ThemeContext';
 import { PHOTO_GLASS } from '../../../components/PhotoShell';
+import Avatar from '../../../components/Avatar';
 
 const EXPERTISE_TINTS_DARK = {
   Fitness: { backgroundColor: 'rgba(255,106,0,0.14)', color: '#FFB27A' },
@@ -33,10 +34,7 @@ export default function MentorCard({ mentor, onPress, onPressConnect, onPressCha
     <View style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.header}>
-          <Image
-            source={{ uri: mentor.photo || 'https://via.placeholder.com/60' }}
-            style={styles.avatar}
-          />
+          <Avatar name={mentor.name} uri={mentor.photo} size={60} style={styles.avatar} />
           <View style={styles.info}>
             <Text style={styles.name}>{mentor.name}</Text>
             <Text style={styles.subText}>{mentor.year} • {mentor.level}</Text>

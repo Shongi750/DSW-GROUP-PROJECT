@@ -13,19 +13,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "../../context/AppContext";
 import { useTheme, radius, display } from "../../context/ThemeContext";
 import AuthBackdrop, { GlassSheet } from "./AuthBackdrop";
-
-const UJ_LOGO = require("../../../assets/uj-gym-logo.png");
-import { friendlyAuthError } from "../../lib/authErrors";
+import { friendlyAuthError, AUTH_HINTS } from "../../lib/authErrors";
 import { accountFromStudentOrEmail } from "../../lib/ujEmail";
 import { forgetLoginEmail, recallLoginEmail, rememberLoginEmail } from "../../lib/rememberLogin";
-import {
-  biometricLabel,
-  canUseBiometrics,
-  isUnlockEnabled,
-  promptEnableAfterLogin,
-  unlockCredentials,
-} from "../../lib/biometrics";
+import { promptEnableAfterLogin } from "../../lib/biometrics";
 
+const UJ_LOGO = require("../../../assets/uj-gym-logo.png");
+
+// Sign in with UJ student number → we turn that into the campus email in ujEmail.js
 export default function LoginScreen({ navigation }) {
   const { login, resetPassword } = useApp();
   const { colors } = useTheme();
@@ -34,86 +29,104 @@ export default function LoginScreen({ navigation }) {
   const [rememberMe, setRememberMe] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [bioLabel, setBioLabel] = useState("");
+  const [noticeOk, setNoticeOk] = useState(false);
 
-  useEffect(() => {
-    recallLoginEmail().then((saved) => {
-      if (!saved) return;
-      setStudentNumber(saved);
-      setRememberMe(true);
-    });
-    Promise.all([canUseBiometrics(), isUnlockEnabled(), biometricLabel()]).then(
-      ([can, on, label]) => {
-        if (can && on) setBioLabel(label);
+  useEffect(function loadSavedLogin() {
+    recallLoginEmail().then(function (saved) {
+      if (saved) {
+        setStudentNumber(saved);
+        setRememberMe(true);
       }
-    );
+    });
   }, []);
 
-  const resolveAccount = () => accountFromStudentOrEmail(studentNumber);
+  function resolveAccount() {
+    return accountFromStudentOrEmail(studentNumber);
+  }
 
-  const handleLogin = async () => {
-    if (!String(studentNumber).trim() || !password) {
-      return setNotice("Enter your 9-digit student number and password.");
+  function showError(message) {
+    setNoticeOk(false);
+    setNotice(message);
+  }
+
+  function showSuccess(message) {
+    setNoticeOk(true);
+    setNotice(message);
+  }
+
+  async function handleLogin() {
+    const number = String(studentNumber).trim();
+    if (!number && !password) {
+      showError(AUTH_HINTS.needBoth);
+      return;
+    }
+    if (!number) {
+      showError(AUTH_HINTS.needNumber);
+      return;
+    }
+    if (!/^\d{9}$/.test(number)) {
+      showError(AUTH_HINTS.needNineDigits);
+      return;
+    }
+    if (!password) {
+      showError(AUTH_HINTS.needPassword);
+      return;
     }
     let account;
     try {
       account = resolveAccount();
     } catch (error) {
-      return setNotice(error.message);
+      showError(friendlyAuthError(error));
+      return;
     }
     setNotice("");
+    setNoticeOk(false);
     setBusy(true);
     try {
       const signedIn = await login({ email: account.email, password });
-      if (!signedIn) return;
-      if (rememberMe) await rememberLoginEmail(account.studentNumber);
-      else await forgetLoginEmail();
-      await promptEnableAfterLogin({ email: account.email, password });
+      if (!signedIn) {
+        // Email not confirmed — AppContext routes them to the code screen
+        return;
+      }
+      if (rememberMe) {
+        await rememberLoginEmail(account.studentNumber);
+      } else {
+        await forgetLoginEmail();
+      }
+      // Offer the biometric app lock (no password is stored)
+      await promptEnableAfterLogin();
     } catch (error) {
-      setNotice(friendlyAuthError(error));
+      showError(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const handleForgot = async () => {
+  async function handleForgot() {
     if (!String(studentNumber).trim()) {
-      return setNotice("Enter your 9-digit student number first.");
+      showError(AUTH_HINTS.forgotNeedNumber);
+      return;
     }
     let account;
     try {
       account = resolveAccount();
     } catch (error) {
-      return setNotice(error.message);
+      showError(friendlyAuthError(error));
+      return;
     }
     setNotice("");
+    setNoticeOk(false);
     setBusy(true);
     try {
       await resetPassword(account.email);
-      // Do not confirm whether the account exists.
-      setNotice("If that student number has an account, a reset link was sent to the matching UJ inbox.");
+      // Same message either way — we do not tell strangers if an account exists.
+      showSuccess(AUTH_HINTS.resetSent);
     } catch (error) {
-      setNotice(friendlyAuthError(error));
+      showError(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
-  };
-
-  const handleBiometric = async () => {
-    setNotice("");
-    setBusy(true);
-    try {
-      const creds = await unlockCredentials();
-      if (!creds?.email || !creds.password) {
-        return setNotice("Sign in with your student number and password once before biometric unlock can be used.");
-      }
-      await login({ email: creds.email, password: creds.password });
-    } catch (error) {
-      setNotice(friendlyAuthError(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+  }
 
   return (
     <AuthBackdrop>
@@ -189,8 +202,15 @@ export default function LoginScreen({ navigation }) {
           </View>
 
           {notice ? (
-            <View style={styles.notice}>
-              <Text style={styles.noticeText}>{notice}</Text>
+            <View
+              style={[
+                styles.notice,
+                noticeOk ? styles.noticeOk : styles.noticeErr,
+              ]}
+            >
+              <Text style={[styles.noticeText, noticeOk ? styles.noticeOkText : null]}>
+                {notice}
+              </Text>
             </View>
           ) : null}
 
@@ -206,13 +226,6 @@ export default function LoginScreen({ navigation }) {
               </>
             )}
           </TouchableOpacity>
-
-          {bioLabel ? (
-            <TouchableOpacity style={styles.bioButton} onPress={handleBiometric} disabled={busy}>
-              <Ionicons name="finger-print" size={20} color={colors.accent} />
-              <Text style={[styles.bioButtonText, { color: colors.accent }]}>Unlock with {bioLabel}</Text>
-            </TouchableOpacity>
-          ) : null}
 
           <View style={styles.registerRow}>
             <Text style={styles.noAccountText}>or </Text>
@@ -326,14 +339,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 14,
+  },
+  noticeErr: {
     backgroundColor: "rgba(255,106,0,0.16)",
     borderColor: "rgba(255,106,0,0.45)",
+  },
+  noticeOk: {
+    backgroundColor: "rgba(46,160,67,0.18)",
+    borderColor: "rgba(46,160,67,0.5)",
   },
   noticeText: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "600",
     color: "#FFB27A",
+  },
+  noticeOkText: {
+    color: "#9BE39B",
   },
   whiteCta: {
     backgroundColor: "#FFFFFF",
@@ -358,21 +380,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  bioButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,106,0,0.55)",
-    borderRadius: radius.pill,
-    paddingVertical: 14,
-    marginBottom: 14,
-  },
-  bioButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
   },
   registerRow: {
     flexDirection: "row",

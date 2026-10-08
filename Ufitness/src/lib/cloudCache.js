@@ -1,4 +1,9 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { isMissingTableError } from './cloudErrors';
+import { beginCloudWrite, endCloudWrite, setSyncStatus } from './syncStatus';
+import { isOfflineError } from './syncQueueCore';
+import { queueWrite } from './syncQueue';
+import { isOnline } from './autoSync';
 
 let cachedUid = null;
 
@@ -75,7 +80,11 @@ export async function fetchCloudDoc(doc, uid = currentUid()) {
       .eq('user_id', uid)
       .eq('doc', doc)
       .maybeSingle();
-    if (error || !data) return null;
+    if (error) {
+      if (isMissingTableError(error)) setSyncStatus('missing');
+      return null;
+    }
+    if (!data) return null;
     return data.data ?? null;
   } catch {
     return null;
@@ -83,19 +92,49 @@ export async function fetchCloudDoc(doc, uid = currentUid()) {
 }
 
 export async function saveCloudDoc(doc, uid, data) {
-  if (!isSupabaseConfigured || !supabase || !uid || !doc) return false;
+  if (!isSupabaseConfigured || !supabase) {
+    setSyncStatus('local'); // no Supabase keys → phone only
+    return false;
+  }
+  if (!uid || !doc) return false;
   const payload = jsonSafe(data);
   if (!payload) return false;
-  try {
-    const { error } = await supabase.from('user_docs').upsert({
-      user_id: uid,
-      doc,
-      data: payload,
-      updated_at: new Date().toISOString(),
-    });
-    return !error;
-  } catch {
+  const row = { user_id: uid, doc, data: payload };
+
+  // Known offline: don't even try, just queue the latest copy.
+  if (!isOnline()) {
+    await queueWrite({ table: 'user_docs', uid, doc, row });
+    setSyncStatus('offline');
     return false;
+  }
+
+  beginCloudWrite();
+  try {
+    const { error } = await supabase.from('user_docs').upsert({ ...row, updated_at: new Date().toISOString() });
+    if (error && isOfflineError(error)) await queueWrite({ table: 'user_docs', uid, doc, row });
+    endCloudWrite(error);
+    return !error;
+  } catch (error) {
+    if (isOfflineError(error)) await queueWrite({ table: 'user_docs', uid, doc, row });
+    endCloudWrite(error);
+    return false;
+  }
+}
+
+/** Quick check after sign-in: are the Supabase tables there? Drives the sync badge. */
+export async function checkCloudSetup() {
+  if (!isSupabaseConfigured || !supabase) {
+    setSyncStatus('local');
+    return 'local';
+  }
+  try {
+    const { error } = await supabase.from('user_docs').select('doc').limit(1);
+    const next = !error ? 'synced' : isMissingTableError(error) ? 'missing' : 'local';
+    setSyncStatus(next);
+    return next;
+  } catch {
+    setSyncStatus('local');
+    return 'local';
   }
 }
 

@@ -1,0 +1,47 @@
+# UFitness checks on every push / pull request.
+#
+# Why this file is here: the git repository starts at Ufitness_mobile_localtest/
+# (the folder ABOVE the app), and GitHub only reads workflows from
+# <repo root>/.github/workflows. So the workflow lives at the repo root and every
+# step runs inside the Ufitness/ app folder (working-directory: Ufitness).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Ufitness
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Ufitness/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test -- --ci
+
+      - name: Lint (errors fail, warnings are fine)
+        run: npm run lint
+
+      - name: Expo doctor
+        run: npx expo-doctor
+
+      # No .env in CI: the bundles build without Supabase keys (the app falls back
+      # to local-only mode), which is enough to prove the code compiles.
+      - name: Export Android bundle
+        run: npx expo export --platform android --output-dir dist-ci-android
+
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir dist-ci-web

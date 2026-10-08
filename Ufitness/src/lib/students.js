@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { normalizeRoles } from './roles';
 
 function rowToStudent(row) {
   return {
@@ -11,6 +12,9 @@ function rowToStudent(row) {
     yearOfStudy: row.year_of_study || '',
     course: row.course || '',
     avatarUrl: row.avatar_url || '',
+    // roles + appear_as_mentor come from list_students() (schema section 8a)
+    roles: normalizeRoles(row.roles),
+    appearAsMentor: row.appear_as_mentor !== false,
     preferredSchedule: [],
   };
 }
@@ -24,4 +28,15 @@ export async function listStudents() {
   } catch {
     return [];
   }
+}
+
+/** Students who hold the mentor role and have not hidden themselves. */
+export function mentorsFrom(students, myId) {
+  return (students || []).filter(
+    (student) =>
+      student.id !== myId &&
+      student.appearAsMentor !== false &&
+      Array.isArray(student.roles) &&
+      student.roles.includes('mentor')
+  );
 }

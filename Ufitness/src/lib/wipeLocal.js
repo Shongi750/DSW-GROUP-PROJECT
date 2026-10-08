@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { disableUnlock } from './biometrics';
+import { removeAllDownloads } from './downloads/downloadsStore';
 
 const KEYS = [
   'ufitness.session.v1',
@@ -13,6 +14,8 @@ const KEYS = [
   'ufitness.workout.dailyClips.v1',
   'ufitness.workout.savedClips.v1',
   'ufitness.workout.pending.v1',
+  'ufitness.workout.savedSessions.v1',
+  'ufitness.syncQueue.v1',
   'ufitness.mentor.requests.v1',
   'ufitness.admin.v1',
   'workoutapp.profile.v1',
@@ -21,5 +24,6 @@ const KEYS = [
 
 export async function wipeLocalUfitnessData() {
   await AsyncStorage.multiRemove(KEYS);
+  await removeAllDownloads().catch(() => {}); // offline downloads + their files
   await disableUnlock();
 }

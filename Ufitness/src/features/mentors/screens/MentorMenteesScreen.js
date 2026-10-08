@@ -1,3 +1,7 @@
+/**
+ * MentorMenteesScreen — list of accepted mentees for this mentor.
+ * Each row opens progress, guidance notes, or 1:1 Chat (peerKind mentee).
+ */
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -96,7 +100,7 @@ export default function MentorMenteesScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
-  list: { padding: spacing.section, paddingBottom: 40 },
+  list: { padding: spacing.section, paddingBottom: 100 },
   title: { ...display, fontSize: 28, color: '#FFFFFF', marginBottom: 6 },
   copy: { color: '#C9C9C9', marginBottom: 18, fontSize: 14 },
   empty: { color: '#C9C9C9', marginTop: 24, textAlign: 'center', lineHeight: 20 },

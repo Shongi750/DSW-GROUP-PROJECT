@@ -3,14 +3,15 @@ import { Animated, Easing, Image, Platform, StyleSheet, Text, View } from 'react
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 
+// Shown while fonts and auth state load — keeps the app from flashing a blank screen.
 const LOGO = require('../../assets/splash-logo.png');
 
 function PulseRing({ delay }) {
   const scale = useRef(new Animated.Value(0.08)).current;
   const opacity = useRef(new Animated.Value(0.7)).current;
 
-  useEffect(() => {
-    const run = Animated.loop(
+  useEffect(function startPulse() {
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
         Animated.parallel([
@@ -31,8 +32,10 @@ function PulseRing({ delay }) {
         Animated.timing(opacity, { toValue: 0.7, duration: 0, useNativeDriver: true }),
       ])
     );
-    run.start();
-    return () => run.stop();
+    animation.start();
+    return function stopPulse() {
+      animation.stop();
+    };
   }, [delay, opacity, scale]);
 
   return (
@@ -47,8 +50,8 @@ function BounceDot({ delay }) {
   const y = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0.4)).current;
 
-  useEffect(() => {
-    const run = Animated.loop(
+  useEffect(function startBounce() {
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
         Animated.parallel([
@@ -62,8 +65,10 @@ function BounceDot({ delay }) {
         Animated.delay(200),
       ])
     );
-    run.start();
-    return () => run.stop();
+    animation.start();
+    return function stopBounce() {
+      animation.stop();
+    };
   }, [delay, opacity, y]);
 
   return <Animated.View style={[styles.dot, { opacity, transform: [{ translateY: y }] }]} />;
@@ -75,7 +80,7 @@ export default function SplashScreen() {
   const tag = useRef(new Animated.Value(0)).current;
   const dots = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
+  useEffect(function playIntro() {
     Animated.parallel([
       Animated.sequence([
         Animated.delay(250),

@@ -23,6 +23,10 @@ import { hasLoyaltyHubKey } from '../lib/loyaltyHub';
 import { searchGroceryProducts } from '../lib/saFoodApi';
 import { applyStore, applyStoreList, quoteMatchesStore, STORE_FILTERS, storeLabel } from '../lib/stores';
 import { buildGroceryPdf, downloadPdfBytes, groceryListHtml } from '../lib/groceryPdf';
+import Skeleton from '../../../components/Skeleton';
+import DownloadButton from '../../../components/DownloadButton';
+import { useDownload } from '../../../lib/downloads/useDownload';
+import { downloadGroceryList, groceryRefId } from '../lib/mealDownloads';
 
 const NO_SPECIALS = [];
 
@@ -59,9 +63,10 @@ export default function GroceryList({
   onToggle,
   onAdd,
   onRemove,
+  offlineNote,
 }) {
   const insets = useSafeAreaInsets();
-  const { colors: theme } = useTheme();
+  const { colors: theme, isDark } = useTheme();
   const [open, setOpen] = useState(false);
   const [localCadence, setLocalCadence] = useState('weekly');
   const cadence = cadenceProp || localCadence;
@@ -170,31 +175,41 @@ export default function GroceryList({
     setAddOpen(false);
   };
 
-  const savePdf = async () => {
+  // Same rows as the PDF (ticked items for this store + cadence).
+  const pdfPayload = () => {
     const checked = scaled.filter((item) => item.checked);
-    if (!checked.length) {
+    const cadenceLabel = CADENCES.find((item) => item.id === cadence)?.label || 'Weekly';
+    return {
+      title: 'UFitness Grocery List',
+      subtitle: `${cadenceLabel} shop · ${shopLabel} · ${formatRand(estimated)} · ${checked.length} items`,
+      rows: checked.map((item) => ({
+        name: `${item.name}${item.qty > 1 ? ` x ${item.qty}` : ''}`,
+        store: item.storeFit === false
+          ? item.storeNote || `No ${shopLabel} quote`
+          : item.special && item.store
+            ? `Special at ${item.store}`
+            : item.store || (item.priceLive ? 'Live price' : 'Estimate'),
+        price: formatRand(item.linePrice ?? item.price),
+      })),
+      total: formatRand(estimated),
+      footer:
+        'Live shelf prices and specials from LoyaltyHub (Shoprite, Checkers, Pick n Pay, Woolworths, Clicks, Makro). Gaps fall back to Open Prices receipts.',
+    };
+  };
+
+  // Download for offline: the list + prices (JSON) and, on the phone, the PDF file.
+  const dl = useDownload('grocery', groceryRefId(storeId, cadence));
+  const downloadOffline = () =>
+    dl.run(() => downloadGroceryList({ items, products, storeId, cadence, shopLabel, pdfPayload: pdfPayload() }));
+
+  const savePdf = async () => {
+    const payload = pdfPayload();
+    if (!payload.rows.length) {
       Alert.alert('Nothing to download', 'Tick the groceries you want on the list first.');
       return;
     }
     try {
       setSaving(true);
-      const cadenceLabel = CADENCES.find((item) => item.id === cadence)?.label || 'Weekly';
-      const payload = {
-        title: 'UFitness Grocery List',
-        subtitle: `${cadenceLabel} shop · ${shopLabel} · ${formatRand(estimated)} · ${checked.length} items`,
-        rows: checked.map((item) => ({
-          name: `${item.name}${item.qty > 1 ? ` x ${item.qty}` : ''}`,
-          store: item.storeFit === false
-            ? item.storeNote || `No ${shopLabel} quote`
-            : item.special && item.store
-              ? `Special at ${item.store}`
-              : item.store || (item.priceLive ? 'Live price' : 'Estimate'),
-          price: formatRand(item.linePrice ?? item.price),
-        })),
-        total: formatRand(estimated),
-        footer:
-          'Live shelf prices and specials from LoyaltyHub (Shoprite, Checkers, Pick n Pay, Woolworths, Clicks, Makro). Gaps fall back to Open Prices receipts.',
-      };
       const filename = `ufitness-grocery-${cadence}.pdf`;
 
       if (Platform.OS === 'web') {
@@ -254,6 +269,8 @@ export default function GroceryList({
           >
             <Text style={[styles.title, { color: theme.text }]}>Grocery list</Text>
             <Text style={[styles.subtitle, { color: theme.muted }]}>Pick a store and how often you shop. Search SA shelves if an item is missing.</Text>
+            {offlineNote ? <Text style={[styles.subtitle, { color: theme.muted }]}>{offlineNote}</Text> : null}
+            <DownloadButton dl={dl} onDownload={downloadOffline} media={false} light={!isDark} style={{ marginBottom: 12 }} />
             <Text style={styles.sourceNote}>
               {hasLoyaltyHubKey() && priceSource === 'loyaltyhub'
                 ? 'Live shelf prices · Shoprite, Checkers, Pick n Pay and more.'
@@ -306,8 +323,9 @@ export default function GroceryList({
 
             <Text style={styles.heading}>Specials</Text>
             {loadingSpecials ? (
-              <View style={styles.inlineLoad}>
-                <ActivityIndicator color={colors.primary} />
+              // Skeleton rows while live specials (prices) load
+              <View>
+                <Skeleton rows={3} style={{ paddingHorizontal: 0 }} />
                 <Text style={styles.muted}>Checking live specials…</Text>
               </View>
             ) : visibleSpecials.length ? (

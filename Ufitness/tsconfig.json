@@ -14,7 +14,9 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "_archive",
+    "supabase/functions"
   ],
   "extends": "expo/tsconfig.base"
 }

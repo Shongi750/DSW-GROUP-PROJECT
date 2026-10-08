@@ -9,19 +9,22 @@ export default function WeightScreen({ navigation }) {
   const { profile, updateProfile } = useApp();
   const [weight, setWeight] = useState(profile.weightKg || 75);
 
-  const bump = (delta) => {
-    setWeight((value) => Math.max(30, Math.min(200, Math.round((value + delta) * 10) / 10)));
-  };
+  // Optional field — used locally for progress context, not sent to a doctor.
+  function bump(delta) {
+    setWeight(function (value) {
+      return Math.max(30, Math.min(200, Math.round((value + delta) * 10) / 10));
+    });
+  }
 
-  const next = () => {
+  function goNext() {
     updateProfile({ weightKg: weight });
     navigation.navigate('Days');
-  };
+  }
 
   return (
-    <GlassScreen scroll={false} contentClassName="flex-1">
+    <GlassScreen>
       <View className="mt-2 h-1 w-1/2 rounded bg-accent" />
-      <TouchableOpacity className="self-end p-2" onPress={next}>
+      <TouchableOpacity className="self-end p-2" onPress={goNext}>
         <Text className="font-bold text-muted">Skip</Text>
       </TouchableOpacity>
 
@@ -30,18 +33,18 @@ export default function WeightScreen({ navigation }) {
 
       <Text className="mb-2 font-bold text-ink">Weight</Text>
       <View className="mb-6 flex-row items-center gap-2.5">
-        <TouchableOpacity onPress={() => bump(-0.5)} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
+        <TouchableOpacity onPress={function () { bump(-0.5); }} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
           <Ionicons name="remove" size={18} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-[40px] font-display uppercase text-ink">{weight.toFixed(1)}</Text>
         <Text className="font-bold text-muted">kg</Text>
-        <TouchableOpacity onPress={() => bump(0.5)} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
+        <TouchableOpacity onPress={function () { bump(0.5); }} className="h-8 w-8 items-center justify-center rounded-full bg-accent">
           <Ionicons name="add" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
       <View className="mt-auto">
-        <PrimaryButton title="NEXT" icon="arrow-forward" onPress={next} />
+        <PrimaryButton title="NEXT" icon="arrow-forward" onPress={goNext} />
       </View>
     </GlassScreen>
   );

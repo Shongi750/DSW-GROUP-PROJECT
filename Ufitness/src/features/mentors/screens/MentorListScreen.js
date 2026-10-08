@@ -1,3 +1,8 @@
+/**
+ * MentorListScreen — student browses real senior mentors.
+ * Mentors = students from list_students() whose roles include 'mentor'.
+ * Filters by campus and year via mentorMatchesStudent; Connect opens MatchScreen.
+ */
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, FlatList, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,45 +12,27 @@ import { useTheme } from '../../../context/ThemeContext';
 import { useApp } from '../../../context/AppContext';
 import { mentorMatchesStudent } from '../lib/matchMentors';
 import { listMentorRequests } from '../lib/mentorRequests';
-import { loadMentorRoster } from '../../admin/lib/adminStore';
+import { listStudents, mentorsFrom } from '../../../lib/students';
+import { SkeletonCard } from '../../../components/Skeleton';
+import { trackFeature } from '../../../lib/usagePing';
+import { useSyncTick } from '../../../lib/autoSync';
 
 const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
 
-const mentors = [
-    {
-        id:'1',
-        name:'Sipho Ndlovu',
-        expertise:'Fitness',
-        availability:'Mon-Fri 9am-5pm',
-        year:'3rd Year',
-        level:'Intermediate',
-        campus:'APB',
-        photo:'https://media.istockphoto.com/id/1269814510/photo/young-cheerful-man-of-african-ethnicity-looking-at-you-with-white-toothy-smile.jpg?s=612x612&w=0&k=20&c=qrQqXzn_eXdz-Y85D7_cmm6s8Rrr8CdP27fWCH8WHY4=',
-        quote:'Train with purpose and keep your consistency higher than your excuses.'
-    },
-    {
-        id:'2',
-        name:'Lerato Mokoena',
-        expertise:'Nutrition',
-        availability:'Mon-Fri 10am-4pm',
-        year:'3rd Year',
-        level:'Advanced',
-        campus:'APK',
-        photo:'https://th.bing.com/th/id/OIP.Druscn_5yB4DALCzdtheDgHaHa?w=167&h=180&c=7&r=0&o=7&dpr=1.5&pid=1.7&rm=3',
-        quote:'The right fuel changes everything — we build habits that actually last.'
-    },
-    {
-        id:'3',
-        name:'Mike van Heerden',
-        expertise:'Strength Training',
-        availability:'Mon-Fri 8am-6pm',
-        year:'4th Year',
-        level:'Beginner',
-        campus:'DFC',
-        photo:'https://th.bing.com/th/id/OIP.vtjmy5jwBi0aLcVU21HlFAHaEK?w=321&h=180&c=7&r=0&o=7&dpr=1.5&pid=1.7&rm=3',
-        quote:'Strong foundations win. I help you lift smarter, recover better, and move with confidence.'
-    },
-];
+// Turn a list_students() row into the shape MentorCard expects.
+function toMentorCard(student) {
+    return {
+        id: student.id,
+        name: student.name,
+        expertise: student.fitnessGoal || 'Fitness',
+        year: student.yearOfStudy,
+        level: student.experienceLevel || 'Mentor',
+        campus: student.campus,
+        photo: student.avatarUrl,
+        quote: student.course ? `${student.course} student and campus mentor.` : 'UJ campus mentor.',
+        appearAsMentor: student.appearAsMentor,
+    };
+}
 
 const campusFilters = ['All Campuses', 'APK', 'APB', 'DFC', 'SWC'];
 
@@ -55,35 +42,43 @@ export default function MentorListScreen({navigation}) {
     const { profile, currentStudent } = useApp();
     const [selectedCampus, setSelectedCampus] = useState('All Campuses');
     const [requests, setRequests] = useState([]);
-    const [roster, setRoster] = useState([]);
+    const [mentors, setMentors] = useState([]);
+    const [loading, setLoading] = useState(true);
     const studentYear = profile?.yearOfStudy || '';
     const studentId = currentStudent?.id || 'guest';
+    const syncTick = useSyncTick(); // reload after reconnecting
 
     useFocusEffect(
         useCallback(() => {
             let alive = true;
+            trackFeature('Mentors');
             listMentorRequests(studentId).then((rows) => {
                 if (alive) setRequests(rows);
             });
-            loadMentorRoster().then((rows) => {
-                if (alive) setRoster(rows);
-            });
+            listStudents()
+                .then((students) => {
+                    if (alive) setMentors(mentorsFrom(students, studentId).map(toMentorCard));
+                })
+                .finally(() => {
+                    if (alive) setLoading(false);
+                });
             return () => {
                 alive = false;
             };
-        }, [studentId])
+        }, [studentId, syncTick])
     );
 
     const requestedIds = useMemo(() => new Set(requests.map((row) => row.mentorId)), [requests]);
 
+    // Hide anyone below the student's year, other campuses, or mentors who opted out.
     const filteredMentors = useMemo(() => {
-        return [...roster, ...mentors].filter((mentor) => {
+        return mentors.filter((mentor) => {
             if (mentor.appearAsMentor === false) return false;
             if (!mentorMatchesStudent(mentor, studentYear)) return false;
             if (selectedCampus !== 'All Campuses' && mentor.campus !== selectedCampus) return false;
             return true;
         });
-    }, [selectedCampus, studentYear, roster]);
+    }, [selectedCampus, studentYear, mentors]);
 
     return (
         <View style={styles.container}>
@@ -148,11 +143,18 @@ export default function MentorListScreen({navigation}) {
                     />
                 )}
                 ListEmptyComponent={
-                    <Text style={styles.empty}>
-                        {studentYear
-                            ? 'No mentors at or above your year on this campus yet.'
-                            : 'Add your year of study in setup to see senior mentors.'}
-                    </Text>
+                    loading ? (
+                        <View>
+                            <SkeletonCard style={{ marginHorizontal: 0 }} />
+                            <SkeletonCard style={{ marginHorizontal: 0 }} />
+                        </View>
+                    ) : (
+                        <Text style={styles.empty}>
+                            {studentYear
+                                ? 'No mentors at or above your year on this campus yet. Mentors are 3rd-year+ students invited by Campus Admin.'
+                                : 'Add your year of study in setup to see senior mentors.'}
+                        </Text>
+                    )
                 }
             />
         </View>

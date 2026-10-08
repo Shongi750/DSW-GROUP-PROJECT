@@ -20,10 +20,22 @@ import { DEFAULT_AVATAR, initialAvatar } from '../../data/profileAvatars';
 import { genderLabel } from '../../data/genderOptions';
 import { useFocusEffect } from '@react-navigation/native';
 import { useApp } from '../../context/AppContext';
-import { inviteForStudent, loadAdminState, respondMentorInvite } from '../../features/admin/lib/adminStore';
+import {
+  acceptMentorInvite as acceptInviteInCloud,
+  declineMentorInvite as declineInviteInCloud,
+  loadMyPendingInvite,
+} from '../../features/mentors/lib/mentorInvites';
 import { biometricLabel, canUseBiometrics, disableUnlock, isUnlockEnabled } from '../../lib/biometrics';
 import { hapticLight, hapticSuccess } from '../../lib/haptics';
+import SyncStatus from '../../components/SyncStatus';
 
+// Profile tab
+// - identity / avatar
+// - settings rows (diet, privacy, notifications…)
+// - mentor invite (from Campus Admin, Supabase mentor_invites); the “Try Mentor Hub”
+//   shortcut only shows in dev builds and only unlocks on this phone
+//
+// Old onboarding strings don’t always match what we show on profile.
 const GOAL_LABELS = {
   weight: 'Weight Management',
   'Weight mgmt': 'Weight Management',
@@ -48,17 +60,19 @@ export default function ProfileScreen({
   onEatAllergies,
   onNotifications,
   onPrivacySecurity,
+  onDownloads,
   onLogout,
   onDeleteAccount,
   onOpenAdmin,
   onOpenMentorHub,
 }) {
   const { isDark, colors, setTheme } = useTheme();
-  const { profile, grantMentorRole, isMentor } = useApp();
+  const { grantMentorRole, applyServerRoles, isMentor } = useApp();
   const styles = createStyles(colors, isDark);
   const [loggingOut, setLoggingOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mentorInvite, setMentorInvite] = useState(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [bioOn, setBioOn] = useState(false);
   const [bioLabel, setBioLabel] = useState('');
 
@@ -67,39 +81,77 @@ export default function ProfileScreen({
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      loadAdminState().then((state) => {
-        if (alive) setMentorInvite(inviteForStudent(state.invites, profile));
-      });
-      canUseBiometrics().then(async (can) => {
-        if (!alive || !can) {
-          if (alive) setBioOn(false);
+
+      async function loadMentorInvite() {
+        // Mentors already have the role, so there is nothing to answer.
+        const invite = isMentor ? null : await loadMyPendingInvite();
+        if (alive) {
+          setMentorInvite(invite);
+        }
+      }
+
+      async function loadBiometricStatus() {
+        const can = await canUseBiometrics();
+        if (!alive) {
           return;
         }
-        const [on, label] = await Promise.all([isUnlockEnabled(), biometricLabel()]);
-        if (!alive) return;
+        if (!can) {
+          setBioOn(false);
+          return;
+        }
+        const on = await isUnlockEnabled();
+        const label = await biometricLabel();
+        if (!alive) {
+          return;
+        }
         setBioOn(on);
         setBioLabel(label);
-      });
-      return () => {
+      }
+
+      loadMentorInvite();
+      loadBiometricStatus();
+
+      return function cleanup() {
         alive = false;
       };
-    }, [profile])
+    }, [isMentor])
   );
 
-  const name = currentStudent?.name || 'Student';
-  const campus = currentStudent?.campus || 'APK';
-  const avatarUrl = currentStudent?.avatarUrl || initialAvatar(name) || DEFAULT_AVATAR;
-  const meta = [
-    currentStudent?.course,
-    currentStudent?.yearOfStudy,
-    genderLabel(currentStudent?.gender),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const weeklyTarget = currentStudent?.weeklyTarget || 4;
-  const goal =
-    GOAL_LABELS[currentStudent?.fitnessGoal] || currentStudent?.fitnessGoal || 'Build Muscle';
-  const foodRemaining = currentStudent?.foodBudgetRemaining ?? 340;
+  const name =
+    currentStudent && currentStudent.name ? currentStudent.name : 'Student';
+  const campus =
+    currentStudent && currentStudent.campus ? currentStudent.campus : 'APK';
+  const avatarUrl =
+    (currentStudent && currentStudent.avatarUrl) ||
+    initialAvatar(name) ||
+    DEFAULT_AVATAR;
+
+  const metaParts = [];
+  if (currentStudent && currentStudent.course) {
+    metaParts.push(currentStudent.course);
+  }
+  if (currentStudent && currentStudent.yearOfStudy) {
+    metaParts.push(currentStudent.yearOfStudy);
+  }
+  if (currentStudent && currentStudent.gender) {
+    metaParts.push(genderLabel(currentStudent.gender));
+  }
+  const meta = metaParts.join(' · ');
+
+  const weeklyTarget =
+    currentStudent && currentStudent.weeklyTarget
+      ? currentStudent.weeklyTarget
+      : 4;
+  const rawGoal =
+    currentStudent && currentStudent.fitnessGoal ? currentStudent.fitnessGoal : '';
+  let goal = GOAL_LABELS[rawGoal];
+  if (!goal) {
+    goal = rawGoal || 'Build Muscle';
+  }
+  const foodRemaining =
+    currentStudent && currentStudent.foodBudgetRemaining != null
+      ? currentStudent.foodBudgetRemaining
+      : 340;
 
   const handleLogOut = async () => {
     if (!onLogout) return;
@@ -136,20 +188,46 @@ export default function ProfileScreen({
     );
   };
 
-  const unlockMentorDemo = async () => {
+  // Dev builds only: give this account the mentor role to test Mentor Hub.
+  // No fake mentees are created — requests come from mentor_requests.
+  async function unlockMentorDemo() {
     grantMentorRole();
-    try {
-      const { seedDemoMentorship } = require('../../features/mentors/lib/mentorRequests');
-      await seedDemoMentorship(
-        profile.userId || currentStudent?.id || 'guest',
-        profile.name || name || 'Mentor'
-      );
-    } catch {
-      /* demo seed optional */
-    }
     Alert.alert('Mentor Hub unlocked', 'Same login — student tabs stay. Opening Mentor Hub.');
-    onOpenMentorHub?.();
-  };
+    if (onOpenMentorHub) {
+      onOpenMentorHub();
+    }
+  }
+
+  // Accept on the server first (it adds the mentor role), then update this phone.
+  async function acceptMentorInvite() {
+    setInviteBusy(true);
+    try {
+      const roles = await acceptInviteInCloud(mentorInvite.id);
+      applyServerRoles(roles);
+      setMentorInvite(null);
+      hapticSuccess();
+      Alert.alert(
+        'Mentor Hub unlocked',
+        'You keep the full student app. Open Community → Mentor Hub for mentees, progress, and guidance.'
+      );
+    } catch (error) {
+      Alert.alert('Could not accept', error.message);
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+
+  async function declineMentorInvite() {
+    setInviteBusy(true);
+    try {
+      await declineInviteInCloud(mentorInvite.id);
+      setMentorInvite(null);
+    } catch (error) {
+      Alert.alert('Could not answer', error.message);
+    } finally {
+      setInviteBusy(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -186,6 +264,7 @@ export default function ProfileScreen({
           <Text style={styles.name}>{name}</Text>
           {meta ? <Text style={styles.meta}>{meta}</Text> : null}
           <Text style={styles.campusLine}>{campus} · UJ</Text>
+          <SyncStatus style={{ alignSelf: 'center', marginTop: 10 }} />
         </Animated.View>
 
         {/* One signal strip — two facts, one surface */}
@@ -214,38 +293,18 @@ export default function ProfileScreen({
             <Text style={styles.inviteCopy}>{mentorInvite.message}</Text>
             <View style={styles.inviteRow}>
               <Pressable
-                style={styles.inviteYes}
-                onPress={async () => {
-                  await respondMentorInvite(mentorInvite.id, 'accepted', {
-                    id: profile.userId || `mentor-${Date.now()}`,
-                    name: profile.name || name,
-                    expertise: profile.fitnessGoal || 'Fitness',
-                    year: profile.yearOfStudy || '3rd Year',
-                    level: profile.experienceLevel || 'Intermediate',
-                    campus: profile.campus || campus,
-                    photo: avatarUrl,
-                    quote: 'I trained here first. I can help you stay consistent on campus.',
-                    appearAsMentor: profile.privacy?.appearAsMentor !== false,
-                  });
-                  grantMentorRole();
-                  setMentorInvite(null);
-                  hapticSuccess();
-                  Alert.alert(
-                    'Mentor Hub unlocked',
-                    'You keep the full student app. Open Community → Mentor Hub for mentees, progress, and guidance.'
-                  );
-                }}
+                style={[styles.inviteYes, inviteBusy && { opacity: 0.6 }]}
+                onPress={acceptMentorInvite}
+                disabled={inviteBusy}
               >
-                <Text style={styles.inviteYesText}>Accept</Text>
+                <Text style={styles.inviteYesText}>{inviteBusy ? 'Saving…' : 'Accept'}</Text>
               </Pressable>
               <Pressable
-                style={styles.inviteNo}
-                onPress={async () => {
-                  await respondMentorInvite(mentorInvite.id, 'declined');
-                  setMentorInvite(null);
-                }}
+                style={[styles.inviteNo, inviteBusy && { opacity: 0.6 }]}
+                onPress={declineMentorInvite}
+                disabled={inviteBusy}
               >
-                <Text style={styles.inviteNoText}>Not now</Text>
+                <Text style={styles.inviteNoText}>Decline</Text>
               </Pressable>
             </View>
           </Animated.View>
@@ -264,12 +323,26 @@ export default function ProfileScreen({
                 styles={styles}
                 accent
               />
-            ) : (
+            ) : __DEV__ ? (
               <SettingsRow
                 icon="ribbon-outline"
                 label="Try Mentor Hub"
-                caption="Demo unlock on this account"
+                caption="Dev build only: unlocks on this phone, not in the cloud"
                 onPress={unlockMentorDemo}
+                colors={colors}
+                styles={styles}
+              />
+            ) : (
+              <SettingsRow
+                icon="ribbon-outline"
+                label="Become a mentor"
+                caption="3rd year+ · invited by Campus Admin"
+                onPress={() =>
+                  Alert.alert(
+                    'Become a mentor',
+                    'Campus Admin invites 3rd-year and senior students with steady training. When you get an invite it shows at the top of Profile.'
+                  )
+                }
                 colors={colors}
                 styles={styles}
               />
@@ -348,6 +421,19 @@ export default function ProfileScreen({
               colors={colors}
               styles={styles}
             />
+            {onDownloads ? (
+              <>
+                <Hairline styles={styles} />
+                <SettingsRow
+                  icon="download-outline"
+                  label="Downloads"
+                  caption="Workouts, meal plans, recipes and lists for offline"
+                  onPress={onDownloads}
+                  colors={colors}
+                  styles={styles}
+                />
+              </>
+            ) : null}
             {bioLabel ? (
               <>
                 <Hairline styles={styles} />
@@ -415,14 +501,15 @@ export default function ProfileScreen({
 }
 
 function SettingsRow({ icon, label, caption, onPress, colors, styles, accent }) {
+  function handlePress() {
+    hapticLight();
+    if (onPress) {
+      onPress();
+    }
+  }
+
   return (
-    <PressScale
-      style={styles.rowPress}
-      onPress={() => {
-        hapticLight();
-        onPress?.();
-      }}
-    >
+    <PressScale style={styles.rowPress} onPress={handlePress}>
       <View style={styles.rowInner}>
         <Ionicons name={icon} size={20} color={accent ? colors.brand : '#C9C9C9'} />
         <View style={styles.rowCopy}>

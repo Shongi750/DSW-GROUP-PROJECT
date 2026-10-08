@@ -1,41 +1,78 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Switch, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { GlassCard, GlassScreen } from '../components/glass';
 import SectionTitle from '../components/sectiontitle';
 import PrimaryButton from '../components/button';
-import { PLATFORMS, GOAL_MUSIC, MOOD_MUSIC, getPlatform } from '../data/music';
-import { openSearch, openSavedLink, isLikelyPlaylistUrl } from '../lib/music';
+import {
+  PLATFORMS,
+  GOAL_MUSIC,
+  MOOD_MUSIC,
+  CAMPUS_PLAYLISTS,
+  SPOTIFY_PLAYLISTS,
+  getPlatform,
+} from '../data/music';
+import { openSearch, openSavedLink, openSpotifyPlaylist, isLikelyPlaylistUrl } from '../lib/music';
+import SpotifyPlaylistCard from '../components/spotifyplaylistcard';
 
+// Settings page: pick Spotify/etc, paste a playlist, try campus searches.
 export default function MusicScreen({ navigation }) {
   const { profile, setMusicPlatform, saveMusicLink, setMusicAutoOpen } = useApp();
   const platformId = profile.musicPlatform || 'spotify';
   const platform = getPlatform(platformId);
-  const savedLink = profile.musicLinks?.[platformId] || '';
+  const savedLink = (profile.musicLinks && profile.musicLinks[platformId]) || '';
   const [link, setLink] = useState(savedLink);
   const [message, setMessage] = useState('');
+  const [spotifyNote, setSpotifyNote] = useState('');
   const goalMusic = GOAL_MUSIC[profile.goal] || GOAL_MUSIC.hypertrophy;
 
-  const choosePlatform = (id) => {
+  function choosePlatform(id) {
     setMusicPlatform(id);
-    setLink(profile.musicLinks?.[id] || '');
+    const existing = (profile.musicLinks && profile.musicLinks[id]) || '';
+    setLink(existing);
     setMessage('');
-  };
+  }
 
-  const save = () => {
+  function save() {
     if (link && !isLikelyPlaylistUrl(link)) {
-      setMessage('That does not look like a link. Paste the full https:// playlist URL.');
+      setMessage('Paste a full https:// playlist link.');
       return;
     }
     saveMusicLink(platformId, link);
-    setMessage(link ? `Saved. Workouts will open this in ${platform.name}.` : 'Cleared your saved playlist.');
-  };
+    // once they save a playlist, auto-open next workout (they can turn it off)
+    if (link) {
+      setMusicAutoOpen(true);
+      setMessage('Saved. Music will open when you start a workout.');
+    } else {
+      setMessage('Cleared your saved playlist.');
+    }
+  }
 
-  const play = async (query) => {
-    const opened = query ? await openSearch(platformId, query) : await openSavedLink(platformId, savedLink);
-    if (!opened) setMessage(`Could not open ${platform.name}. Is it installed?`);
-  };
+  async function playSpotify(item) {
+    const opened = await openSpotifyPlaylist(item.id);
+    setSpotifyNote(opened ? 'Opened ' + item.name + '.' : 'Could not open Spotify.');
+  }
+
+  async function play(query) {
+    let opened = null;
+    if (query) {
+      opened = await openSearch(platformId, query);
+    } else {
+      opened = await openSavedLink(platformId, savedLink);
+    }
+
+    if (!opened) {
+      setMessage('Could not open ' + platform.name + '. Is it installed?');
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      setMessage('Opened in a new tab.');
+    } else {
+      setMessage('Opened ' + platform.name + '.');
+    }
+  }
 
   return (
     <GlassScreen>
@@ -47,26 +84,30 @@ export default function MusicScreen({ navigation }) {
         <View className="w-9" />
       </View>
 
-      <Text className="text-[28px] font-display uppercase text-ink">Your music, your app</Text>
+      <Text className="text-[28px] font-display uppercase text-ink">Your music</Text>
       <Text className="mb-4 mt-2 leading-5 text-muted">
-        Playback stays in the app you already pay for, so your library and account work as normal. Pick a service and
-        we will open it when your workout starts; the workout keeps running here.
+        We open Spotify / Apple / YouTube for you. Playback stays in that app. Your workout timer keeps running here.
       </Text>
 
       <SectionTitle>Service</SectionTitle>
       <View className="flex-row flex-wrap gap-2">
-        {PLATFORMS.map((item) => {
+        {PLATFORMS.map(function (item) {
           const active = item.id === platformId;
           return (
             <TouchableOpacity
               key={item.id}
-              onPress={() => choosePlatform(item.id)}
-              className={`flex-row items-center gap-2 rounded-full border px-4 py-2.5 ${
-                active ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface'
-              }`}
+              onPress={function () {
+                choosePlatform(item.id);
+              }}
+              className={
+                'flex-row items-center gap-2 rounded-full border px-4 py-2.5 ' +
+                (active ? 'border-accent bg-accent/15' : 'border-white/10 bg-surface')
+              }
             >
               <Ionicons name={item.icon} size={16} color={active ? '#FF6A00' : '#8E8E93'} />
-              <Text className={`font-semibold ${active ? 'text-ink' : 'text-muted'}`}>{item.name}</Text>
+              <Text className={'font-semibold ' + (active ? 'text-ink' : 'text-muted')}>
+                {item.name}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -92,7 +133,9 @@ export default function MusicScreen({ navigation }) {
           </View>
           {savedLink ? (
             <TouchableOpacity
-              onPress={() => play(null)}
+              onPress={function () {
+                play(null);
+              }}
               className="flex-1 items-center justify-center rounded-full border border-white/10 bg-surface py-3.5"
             >
               <Text className="font-bold text-ink">Open saved</Text>
@@ -101,8 +144,52 @@ export default function MusicScreen({ navigation }) {
         </View>
       </GlassCard>
 
+      <SectionTitle>Spotify playlists</SectionTitle>
+      <Text className="-mt-1 mb-3 text-[13px] leading-5 text-muted">
+        Spotify’s own workout playlists. Opens the Spotify app (or open.spotify.com) — no login needed here.
+      </Text>
+      {spotifyNote ? <Text className="mb-2 text-[13px] text-accent">{spotifyNote}</Text> : null}
+      {SPOTIFY_PLAYLISTS.map(function (item) {
+        return (
+          <SpotifyPlaylistCard
+            key={item.id}
+            playlist={item}
+            onPress={function () {
+              playSpotify(item);
+            }}
+          />
+        );
+      })}
+
+      <SectionTitle>Campus picks</SectionTitle>
+      {CAMPUS_PLAYLISTS.map(function (item) {
+        return (
+          <GlassCard
+            key={item.id}
+            className="mb-3"
+            onPress={function () {
+              play(item.query);
+            }}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 pr-3">
+                <Text className="font-bold text-ink">{item.label}</Text>
+                <Text className="mt-1 text-[12px] text-muted">
+                  Opens “{item.query}” in {platform.name}
+                </Text>
+              </View>
+              <Ionicons name="play" size={18} color="#FF6A00" />
+            </View>
+          </GlassCard>
+        );
+      })}
+
       <SectionTitle>Matched to your goal</SectionTitle>
-      <GlassCard onPress={() => play(goalMusic.query)}>
+      <GlassCard
+        onPress={function () {
+          play(goalMusic.query);
+        }}
+      >
         <View className="flex-row items-center gap-3">
           <View className="h-11 w-11 items-center justify-center rounded-full bg-accent/20">
             <Ionicons name="play" size={18} color="#FF6A00" />
@@ -110,28 +197,36 @@ export default function MusicScreen({ navigation }) {
           <View className="flex-1">
             <Text className="text-base font-bold text-ink">{goalMusic.label}</Text>
             <Text className="mt-1 text-[13px] text-muted">
-              Opens a "{goalMusic.query}" search in {platform.name}
+              Opens “{goalMusic.query}” in {platform.name}
             </Text>
           </View>
         </View>
       </GlassCard>
 
       <SectionTitle>By part of the session</SectionTitle>
-      {MOOD_MUSIC.map((item) => (
-        <GlassCard key={item.id} className="mb-3" onPress={() => play(item.query)}>
-          <View className="flex-row items-center justify-between">
-            <Text className="font-bold text-ink">{item.label}</Text>
-            <Ionicons name="open-outline" size={18} color="#8E8E93" />
-          </View>
-        </GlassCard>
-      ))}
+      {MOOD_MUSIC.map(function (item) {
+        return (
+          <GlassCard
+            key={item.id}
+            className="mb-3"
+            onPress={function () {
+              play(item.query);
+            }}
+          >
+            <View className="flex-row items-center justify-between">
+              <Text className="font-bold text-ink">{item.label}</Text>
+              <Ionicons name="open-outline" size={18} color="#8E8E93" />
+            </View>
+          </GlassCard>
+        );
+      })}
 
       <GlassCard className="mt-2">
         <View className="flex-row items-center justify-between">
           <View className="mr-3 flex-1">
             <Text className="font-bold text-ink">Open music when a workout starts</Text>
             <Text className="mt-1 text-[13px] leading-5 text-muted">
-              Launches {platform.name} as the player opens. Come back to this app and the timer is still running.
+              Launches {platform.name} as the player opens. Come back here — the timer keeps running.
             </Text>
           </View>
           <Switch

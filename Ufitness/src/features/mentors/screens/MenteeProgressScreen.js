@@ -1,3 +1,7 @@
+/**
+ * MenteeProgressScreen — read-only mentor view of one mentee (from navigation params).
+ * Workout/meal logs stay on the student device until shared; guidance list is live from API.
+ */
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useTheme, display, spacing, radius } from '../../../context/ThemeContext';
@@ -5,7 +9,6 @@ import InspoBackground from '../../../components/InspoBackground';
 import { PHOTO_GLASS } from '../../../components/PhotoShell';
 import MentorGate from '../components/MentorGate';
 
-/** Mentor view of a mentee's journey — honest placeholders until cloud progress is shared. */
 export default function MenteeProgressScreen({ route }) {
   const { colors } = useTheme();
   const mentorship = route.params?.mentorship || {};
@@ -67,7 +70,7 @@ export default function MenteeProgressScreen({ route }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
-  content: { padding: spacing.section, paddingBottom: 40 },
+  content: { padding: spacing.section, paddingBottom: 100 },
   kicker: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4, color: '#FF8A1A', marginBottom: 6 },
   title: { ...display, fontSize: 32, color: '#FFFFFF' },
   copy: { color: '#C9C9C9', marginTop: 6, marginBottom: 20, fontSize: 14 },

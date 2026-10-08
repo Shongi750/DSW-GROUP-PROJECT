@@ -1,3 +1,8 @@
+/**
+ * MentorHubScreen — home for students who accepted a campus mentor role.
+ * Loads pending requests + active mentees from mentorRequests (Supabase mentor_requests).
+ * Students without mentor flag see EmptyState only; UI unchanged for everyone else.
+ */
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -12,6 +17,7 @@ import { PressScale } from '../../../components/motion';
 import EmptyState from '../../../components/EmptyState';
 import { listActiveMentees, listRequestsForMentor } from '../lib/mentorRequests';
 import { hapticLight, hapticSelection } from '../../../lib/haptics';
+import { useSyncTick } from '../../../lib/autoSync';
 
 export default function MentorHubScreen({ navigation }) {
   const { colors } = useTheme();
@@ -22,6 +28,7 @@ export default function MentorHubScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [ready, setReady] = useState(false);
 
+  // Refresh counts whenever the mentor opens this tab.
   const reload = useCallback(async () => {
     const [inbox, active] = await Promise.all([
       listRequestsForMentor(mentorId),
@@ -32,10 +39,11 @@ export default function MentorHubScreen({ navigation }) {
     setReady(true);
   }, [mentorId]);
 
+  const syncTick = useSyncTick(); // reload after reconnecting
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload])
+    }, [reload, syncTick])
   );
 
   const onRefresh = async () => {
@@ -196,7 +204,7 @@ function QuietLink({ icon, label, caption, onPress, colors, accent }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'transparent' },
-  content: { padding: spacing.screen, paddingBottom: 48 },
+  content: { padding: spacing.screen, paddingBottom: 100 },
   kicker: {
     fontSize: type.kicker,
     fontWeight: type.kickerWeight,

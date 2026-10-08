@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,41 +14,39 @@ import {
 } from "react-native";
 import { useApp } from "../../context/AppContext";
 import { useTheme } from "../../context/ThemeContext";
-import { friendlyAuthError } from "../../lib/authErrors";
-import { accountFromStudentOrEmail, personName } from "../../lib/ujEmail";
+import { friendlyAuthError, AUTH_HINTS } from "../../lib/authErrors";
+import { accountFromStudentOrEmail } from "../../lib/ujEmail";
+import { validateSignUp } from "../../lib/registerValidation";
 import AuthBackdrop, { GlassSheet } from "./AuthBackdrop";
 import { Ionicons } from "@expo/vector-icons";
 
 const UJ_LOGO = require("../../../assets/uj-gym-logo.png");
 
-
-//introduce the register screen
-/**
- * The register screen is the first screen that the user sees when they open the app.
- * It allows the user to create a new account.
- * @param {Object} navigation - The navigation object.
- * @returns {React.ReactNode} - The register screen.
- */
-
+// New UJ students: name + 9-digit number, then OTP goes to their student inbox.
 export default function RegisterScreen({ navigation }) {
-  const { register } = useApp();
+  const { register, registerDraft, clearRegisterDraft } = useApp();
   const { colors } = useTheme();
-  const [fullName, setFullName] = useState("");
-  const [studentNumber, setStudentNumber] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // registerDraft = fields kept from the code screen ("Use a different email").
+  const [fullName, setFullName] = useState(registerDraft?.name || "");
+  const [studentNumber, setStudentNumber] = useState(registerDraft?.studentNumber || "");
+  const [password, setPassword] = useState(registerDraft?.password || "");
+  const [confirmPassword, setConfirmPassword] = useState(registerDraft?.password || "");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [legal, setLegal] = useState("");
 
+  // Fields are copied into state above, so the draft can be forgotten now.
+  useEffect(() => {
+    if (registerDraft) {
+      setNotice("Fix your student number, then tap Sign up to get a new code.");
+      clearRegisterDraft();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  //introduce the email hint
-  /**
-   * The email hint is the email address that the user will receive the code to.
-   * @type {string}
-   */
 
+  // Show where the 8-digit code will go once the student number is valid.
   let account = null;
   let emailHint = "";
   try {
@@ -59,45 +57,23 @@ export default function RegisterScreen({ navigation }) {
     emailHint = "";
   }
 
-  //introduce the handle register function
-  /**
-   * The handle register function is the function that is called when the user taps the create account button.
-   * It registers the user with the app.
-   * @returns {Promise<void>} - The promise that is returned when the user taps the create account button.
-   */
-  const handleRegister = async () => {
+  async function handleRegister() {
     setNotice("");
-    if (!personName(fullName)) {
-      setNotice("Enter your name. A student number is not a name.");
-      return;
-    }
-    if (!/^\d{9}$/.test(String(studentNumber).trim())) {
-      setNotice("Enter your 9-digit UJ student number.");
-      return;
-    }
-    if (password.length < 8) {
-      setNotice("Passwords need at least 8 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setNotice("Those passwords do not match.");
+    // Same checks as before, now in lib/registerValidation.js so they can be tested.
+    const check = validateSignUp({ fullName, studentNumber, password, confirmPassword });
+    if (check.error) {
+      setNotice(check.error);
       return;
     }
     setBusy(true);
     try {
-      const account = accountFromStudentOrEmail(studentNumber);
-      await register({
-        name: fullName,
-        email: account.email,
-        studentNumber: account.studentNumber,
-        password,
-      });
+      await register(check.account);
     } catch (error) {
       setNotice(friendlyAuthError(error));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
   return (
     <>

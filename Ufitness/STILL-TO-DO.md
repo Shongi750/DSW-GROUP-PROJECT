@@ -8,10 +8,10 @@ A full phone app is more than screens. Students need an installable app, mail th
 
 Right now the Android test runs inside Expo Go. That is a host app, not UFitness itself.
 
-- Add an Android package name and an iOS bundle id in `app.json`. Neither is set.
-- Make a development build (`npx expo run:android`) so the app icon, splash, and notification color are UFitness’s.
+- Done: `app.json` has the Android package and iOS bundle id `za.ac.uj.ufitness`.
+- Done: `eas.json` has `development`, `preview` (APK) and `production` (app bundle) profiles, with matching `npm run build:*` scripts.
+- Still to do: actually run a build, for example `npm run build:preview:android`, and install the APK on a phone. This needs an Expo account login (`npx eas login`).
 - Expo Go can show local reminders. It cannot do Android push. A development build is required before any remote notification work.
-- For other students, produce an installable Android build (an APK or a Play internal-test track). There is no EAS config yet.
 - iOS has not been built or tested.
 
 ## 2. Make the UJ code email reliable
@@ -47,4 +47,4 @@ Home calories and active minutes are still only what this student logged. Those 
 
 1. Run `Ufitness/supabase/schema.sql` in the Supabase SQL editor so cloud save, buddies, and group chat have tables.
 2. Mail from a real domain, so the 8-digit code reaches UJ inboxes.
-3. Installable build with a package name, so the phone shows UFitness instead of Expo Go.
+3. Run the EAS preview build (the package name and `eas.json` are ready), so the phone shows UFitness instead of Expo Go.

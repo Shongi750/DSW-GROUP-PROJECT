@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -14,16 +14,16 @@ import BadgeStrip from '../../../components/BadgeStrip';
 import { syncAchievements } from '../../../lib/achievements';
 
 function BarChart({ days }) {
-  const max = Math.max(1, ...days.map((item) => item.minutes || item.sessions));
+  const max = Math.max(1, ...days.map(function (item) { return item.minutes || item.sessions; }));
   return (
     <View className="h-24 flex-row items-end justify-between gap-2">
-      {days.map((item) => {
+      {days.map(function (item) {
         const value = item.minutes || item.sessions;
         const height = 8 + (value / max) * 72;
         return (
           <View key={item.key} className="h-full flex-1 items-center justify-end">
             <View
-              className={`w-[70%] min-h-[8px] rounded-md ${value > 0 ? 'bg-accent' : 'bg-white/10'}`}
+              className={'w-[70%] min-h-[8px] rounded-md ' + (value > 0 ? 'bg-accent' : 'bg-white/10')}
               style={{ height }}
             />
             <Text className="mt-1.5 text-[11px] text-muted">{item.weekday}</Text>
@@ -35,47 +35,60 @@ function BarChart({ days }) {
 }
 
 export default function InsightsScreen({ navigation }) {
-  const { profile, todayPlan, statusSentence, weekDone, weekTotal, getExercise } = useApp();
+  const app = useApp();
+  const profile = app.profile;
+  const todayPlan = app.todayPlan;
+  const statusSentence = app.statusSentence;
+  const weekDone = app.weekDone;
+  const weekTotal = app.weekTotal;
+  const getExercise = app.getExercise;
 
   const history = profile.history || [];
-  const weekDays = useMemo(() => weekActivity(history), [history]);
+  const weekDays = weekActivity(history);
   const streak = sessionStreak(history);
-  const weekMinutes = weekDays.reduce((sum, day) => sum + day.minutes, 0);
+  const weekMinutes = weekDays.reduce(function (sum, day) { return sum + day.minutes; }, 0);
   const weekPercent = Math.round((Math.min(weekDone, weekTotal) / Math.max(weekTotal, 1)) * 100);
   const muscles = muscleBreakdown(profile.completedExerciseIds || [], getExercise);
   const records = personalRecords(history);
-  const volume = weekVolume(history.filter((item) => weekDays.some((day) => day.key === item.date)));
+  const thisWeekHistory = history.filter(function (item) {
+    return weekDays.some(function (day) { return day.key === item.date; });
+  });
+  const volume = weekVolume(thisWeekHistory);
   const completedKeys = daysWithSessions(history);
-  const adaptation = useMemo(() => planAdaptationMessage(history), [history]);
+  const adaptation = planAdaptationMessage(history, profile);
   const [badges, setBadges] = useState([]);
 
-  useEffect(() => {
+  useEffect(function () {
     let alive = true;
-    syncAchievements({ history, weekDone, weekTotal }).then((result) => {
-      if (alive) setBadges(result.badges);
+    syncAchievements({ history: history, weekDone: weekDone, weekTotal: weekTotal }).then(function (result) {
+      if (alive) {
+        setBadges(result.badges);
+      }
     });
-    return () => {
+    return function () {
       alive = false;
     };
   }, [history, weekDone, weekTotal]);
 
-  const startToday = () => {
+  function startToday() {
     if (todayPlan.type !== 'train') {
       navigation.navigate('Home');
       return;
     }
     navigation.navigate('PreStart', {
-      title: todayPlan.session?.name || "Today's session",
+      title: (todayPlan.session && todayPlan.session.name) || "Today's session",
       minutes: todayPlan.moves.length * 2 || 30,
       level: 'Train',
       focus: 'Today',
       moves: todayPlan.moves.length,
       movesList: todayPlan.moves,
-      exerciseIds: todayPlan.moves.map((move) => move.id),
+      exerciseIds: todayPlan.moves.map(function (move) { return move.id; }),
       programId: 'floor-25',
-      sessionId: todayPlan.session?.id,
+      sessionId: todayPlan.session && todayPlan.session.id,
     });
-  };
+  }
+
+  const todayDay = weekDays.find(function (d) { return d.isToday; });
 
   return (
     <GlassScreen>
@@ -107,22 +120,27 @@ export default function InsightsScreen({ navigation }) {
         </View>
       </GlassCard>
 
-      <WeekStrip days={weekDays} selectedKey={weekDays.find((d) => d.isToday)?.key} completedKeys={completedKeys} />
+      <WeekStrip days={weekDays} selectedKey={todayDay ? todayDay.key : undefined} completedKeys={completedKeys} />
 
       <View className="mb-2 mt-4 flex-row gap-2.5">
         {[
           ['flame', streak, 'Day streak'],
           ['time-outline', weekMinutes, 'Minutes'],
           ['checkmark-circle-outline', profile.completedExerciseIds.length, 'Moves done'],
-        ].map(([icon, value, label]) => (
-          <GlassCard key={label} className="flex-1">
-            <View className="items-center gap-1">
-              <Ionicons name={icon} size={18} color="#FF6A00" />
-              <Text className="text-xl font-extrabold text-ink">{value}</Text>
-              <Text className="text-center text-[11px] text-muted">{label}</Text>
-            </View>
-          </GlassCard>
-        ))}
+        ].map(function (row) {
+          const icon = row[0];
+          const value = row[1];
+          const label = row[2];
+          return (
+            <GlassCard key={label} className="flex-1">
+              <View className="items-center gap-1">
+                <Ionicons name={icon} size={18} color="#FF6A00" />
+                <Text className="text-xl font-extrabold text-ink">{value}</Text>
+                <Text className="text-center text-[11px] text-muted">{label}</Text>
+              </View>
+            </GlassCard>
+          );
+        })}
       </View>
 
       <SectionTitle>Personal records</SectionTitle>
@@ -132,14 +150,19 @@ export default function InsightsScreen({ navigation }) {
         ) : (
           Object.entries(records)
             .slice(0, 6)
-            .map(([id, rec]) => (
-              <View key={id} className="mb-2 flex-row items-center justify-between">
-                <Text className="flex-1 font-semibold text-ink">{getExercise(id)?.name || id}</Text>
-                <Text className="text-[13px] text-muted">
-                  {rec.reps} reps{rec.weightKg ? ` · ${rec.weightKg} kg` : ''}
-                </Text>
-              </View>
-            ))
+            .map(function (entry) {
+              const id = entry[0];
+              const rec = entry[1];
+              const ex = getExercise(id);
+              return (
+                <View key={id} className="mb-2 flex-row items-center justify-between">
+                  <Text className="flex-1 font-semibold text-ink">{(ex && ex.name) || id}</Text>
+                  <Text className="text-[13px] text-muted">
+                    {rec.reps} reps{rec.weightKg ? ' · ' + rec.weightKg + ' kg' : ''}
+                  </Text>
+                </View>
+              );
+            })
         )}
       </GlassCard>
 
@@ -154,15 +177,17 @@ export default function InsightsScreen({ navigation }) {
         {muscles.length === 0 ? (
           <Text className="leading-5 text-muted">Finish a workout to see which areas you train most.</Text>
         ) : (
-          muscles.map((item) => (
-            <View key={item.label} className="mb-2.5 flex-row items-center gap-2">
-              <Text className="w-[78px] text-[13px] font-semibold text-ink">{item.label}</Text>
-              <View className="h-2 flex-1 overflow-hidden rounded bg-white/10">
-                <View className="h-full rounded bg-accent" style={{ width: `${Math.round(item.ratio * 100)}%` }} />
+          muscles.map(function (item) {
+            return (
+              <View key={item.label} className="mb-2.5 flex-row items-center gap-2">
+                <Text className="w-[78px] text-[13px] font-semibold text-ink">{item.label}</Text>
+                <View className="h-2 flex-1 overflow-hidden rounded bg-white/10">
+                  <View className="h-full rounded bg-accent" style={{ width: Math.round(item.ratio * 100) + '%' }} />
+                </View>
+                <Text className="w-5 text-right text-xs text-muted">{item.count}</Text>
               </View>
-              <Text className="w-5 text-right text-xs text-muted">{item.count}</Text>
-            </View>
-          ))
+            );
+          })
         )}
       </GlassCard>
 
@@ -172,7 +197,7 @@ export default function InsightsScreen({ navigation }) {
           <Text className="leading-5 text-muted">No sessions yet. Start today’s workout to log the first one.</Text>
         </GlassCard>
       ) : (
-        history.slice(0, 8).map((item) => {
+        history.slice(0, 8).map(function (item) {
           const program = getProgram(item.programId);
           return (
             <GlassCard key={item.id} className="mb-2">
@@ -181,7 +206,7 @@ export default function InsightsScreen({ navigation }) {
                   <Ionicons name="barbell" size={16} color="#FF6A00" />
                 </View>
                 <View className="flex-1">
-                  <Text className="font-bold text-ink">{program?.name || 'Custom session'}</Text>
+                  <Text className="font-bold text-ink">{(program && program.name) || 'Custom session'}</Text>
                   <Text className="mt-0.5 text-xs text-muted">
                     {item.date} · {item.exerciseIds.length} moves · {item.minutes} min
                   </Text>
@@ -199,7 +224,7 @@ export default function InsightsScreen({ navigation }) {
           icon="play"
         />
       </View>
-      <TouchableOpacity className="items-center py-3.5" onPress={() => navigation.navigate('Workouts')}>
+      <TouchableOpacity className="items-center py-3.5" onPress={function () { navigation.navigate('Workouts'); }}>
         <Text className="font-bold text-muted">Browse programs</Text>
       </TouchableOpacity>
     </GlassScreen>

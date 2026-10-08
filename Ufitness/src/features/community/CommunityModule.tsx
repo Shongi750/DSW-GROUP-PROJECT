@@ -1,3 +1,15 @@
+/**
+ * CommunityModule.tsx — in-app campus social hub (single file, many screens).
+ *
+ * Section map (scroll to function name):
+ * - CommunityModule / AppContent — router + persist joined groups (AsyncStorage)
+ * - HomeScreen / ProfileCreationScreen — entry when no community profile yet
+ * - CampusCommunityScreen — main feed: posts, gym busyness, meal/workout clips, shortcuts to Buddies/Mentors
+ * - GroupsScreen / GroupDetailScreen — browse groups + live group chat (groupLive)
+ * - ChallengesScreen / ChallengeDetailScreen — campus challenges and progress
+ *
+ * Data: ./model seed data, ./persist for local state, groupLive for realtime chat when configured.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -10,6 +22,7 @@ import {
   Alert,
   Modal,
   Share,
+  Pressable,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,6 +39,11 @@ import { useApp } from '../../context/AppContext';
 import WorkoutClipCard from './WorkoutClipCard';
 import { useCommunityStyles } from './styles';
 import InspoBackground from '../../components/InspoBackground';
+import { SkeletonCard } from '../../components/Skeleton';
+import MessageActionSheet from '../../components/MessageActionSheet';
+import { filterBlocked, isBlocked, nameKey } from '../../lib/blockFilter';
+import { useBlockedKeys } from '../../lib/moderation';
+import { useSyncTick } from '../../lib/autoSync';
 import {
   UJ_CAMPUSES,
   GYM_GOALS,
@@ -71,6 +89,7 @@ export default function CommunityModule({
   );
 }
 
+/** Picks which community screen to show and keeps group membership in sync with storage. */
 function AppContent({
   profileFromApp,
   onOpenBuddies,
@@ -179,6 +198,7 @@ function AppContent({
           />
         ) : screen === 'groups' ? (
           <GroupsScreen
+            loading={!groupsHydrated}
             groups={groups}
             setGroups={setGroups}
             actor={actor}
@@ -220,6 +240,7 @@ function AppContent({
   );
 }
 
+/** Landing before the student creates a community display name. */
 function HomeScreen({ onOpenCommunity }: { onOpenCommunity: () => void }) {
   const { styles, colors } = useCommunityStyles();
   return (
@@ -232,6 +253,7 @@ function HomeScreen({ onOpenCommunity }: { onOpenCommunity: () => void }) {
   );
 }
 
+/** One-time community profile (name, campus, goals) before the feed. */
 function ProfileCreationScreen({
   onSubmit,
   onBack,
@@ -353,6 +375,7 @@ function ProfileCreationScreen({
   );
 }
 
+/** Small helper: hashtag-style labels shown on feed cards. */
 function postTags(item: Post) {
   if (item.tags?.length) return item.tags.slice(0, 2);
   const tags: string[] = [];
@@ -363,6 +386,7 @@ function postTags(item: Post) {
   return tags.slice(0, 2);
 }
 
+/** Main feed: posts, likes, gym status, links to buddies/mentors. */
 function CampusCommunityScreen({
   profile,
   onBack,
@@ -381,6 +405,9 @@ function CampusCommunityScreen({
   onOpenMentorHub?: () => void;
 }) {
   const { styles, colors } = useCommunityStyles();
+  // Report / hide menu on other students' posts (feed posts have no account id, so hide is by name).
+  const blocked = useBlockedKeys();
+  const [actionTarget, setActionTarget] = useState<any>(null);
   const [gymStatuses, setGymStatuses] = useState<Record<string, GymBusyness>>(INITIAL_GYM_STATUSES);
   const [communityHydrated, setCommunityHydrated] = useState(false);
   
@@ -757,6 +784,7 @@ function CampusCommunityScreen({
   };
 
   const visiblePosts = posts.filter((item) => {
+    if (!isOwnPost(item) && isBlocked(blocked, nameKey(item.author))) return false;
     const query = feedQuery.trim().toLowerCase();
     if (!query) return true;
     return `${item.author} ${item.text} ${(item.tags || []).join(' ')}`.toLowerCase().includes(query);
@@ -811,7 +839,7 @@ function CampusCommunityScreen({
             style={{ marginRight: 4 }}
           />
           <Text style={styles.meterNote}>
-            "{gymStatuses[selectedCampusForMeter].note}" —{' '}
+            “{gymStatuses[selectedCampusForMeter].note}” —{' '}
             <Text style={{ fontWeight: 'bold' }}>{gymStatuses[selectedCampusForMeter].reportedBy}</Text>
           </Text>
         </View>
@@ -1086,7 +1114,23 @@ function CampusCommunityScreen({
                   <TouchableOpacity onPress={() => handleDeletePost(item)} hitSlop={8}>
                     <Ionicons name="trash-outline" size={18} color={colors.muted} />
                   </TouchableOpacity>
-                ) : null}
+                ) : (
+                  <TouchableOpacity
+                    hitSlop={8}
+                    accessibilityLabel="Report or hide post"
+                    onPress={() =>
+                      setActionTarget({
+                        table: 'community_posts',
+                        messageId: item.id,
+                        authorName: item.author,
+                        text: item.text,
+                        blockKey: nameKey(item.author),
+                      })
+                    }
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.muted} />
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Workout Log Highlight Section */}
@@ -1536,11 +1580,14 @@ function CampusCommunityScreen({
           </ScrollView>
         </View>
       </Modal>
+      <MessageActionSheet target={actionTarget} onClose={() => setActionTarget(null)} />
     </>
   );
 }
 
+/** List of campus workout groups the student can join. */
 function GroupsScreen({
+  loading,
   groups,
   setGroups,
   actor,
@@ -1548,6 +1595,7 @@ function GroupsScreen({
   onOpenGroup,
   onJoinGroup,
 }: {
+  loading?: boolean;
   groups: Group[];
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   actor: { uid: string; name: string; campus: string };
@@ -1687,7 +1735,18 @@ function GroupsScreen({
           </View>
         </>
       }
-      data={filteredGroups}
+      data={loading ? [] : filteredGroups}
+      // Skeleton cards while saved group memberships load
+      ListEmptyComponent={
+        loading ? (
+          <View>
+            <SkeletonCard style={{ marginHorizontal: 0 }} />
+            <SkeletonCard style={{ marginHorizontal: 0 }} />
+          </View>
+        ) : (
+          <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 16 }}>No groups match your search.</Text>
+        )
+      }
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => (
         <View style={styles.mediaCard}>
@@ -1722,6 +1781,7 @@ function GroupsScreen({
   );
 }
 
+/** One group: about, session info, and live chat thread. */
 function GroupDetailScreen({
   group,
   onBack,
@@ -1737,9 +1797,14 @@ function GroupDetailScreen({
   const page = getGroupPage(group);
   const joined = group?.status === 'joined';
   const [liveMembers, setLiveMembers] = useState<{ name: string; role: string }[]>([]);
-  const [messages, setMessages] = useState<{ id: string; author: string; text: string; time: string }[]>([]);
+  const [messages, setMessages] = useState<{ id: string; userId?: string; author: string; text: string; time: string }[]>([]);
   const [draft, setDraft] = useState('');
-  const { profile: appProfile } = useApp();
+  const [actionTarget, setActionTarget] = useState<any>(null);
+  const { profile: appProfile, user } = useApp();
+  const blocked = useBlockedKeys();
+  const syncTick = useSyncTick(); // reload members + chat after reconnecting
+  // Hide messages from people I blocked (my own always show).
+  const visibleMessages = filterBlocked(messages, blocked, (item) => item.userId, user?.id);
 
   useEffect(() => {
     let alive = true;
@@ -1749,7 +1814,7 @@ function GroupDetailScreen({
     return () => {
       alive = false;
     };
-  }, [group?.id, joined]);
+  }, [group?.id, joined, syncTick]);
 
   useEffect(() => {
     if (!joined || !group?.id) {
@@ -1767,7 +1832,7 @@ function GroupDetailScreen({
       alive = false;
       unsubscribe();
     };
-  }, [group?.id, joined]);
+  }, [group?.id, joined, syncTick]);
 
   const sendChat = async () => {
     const text = draft.trim();
@@ -1857,22 +1922,46 @@ function GroupDetailScreen({
           )}
         </>
       }
-      data={joined ? messages : []}
+      data={joined ? visibleMessages : []}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
         joined ? <Text style={styles.subHeading}>No messages yet. Say hello.</Text> : null
       }
+      ListFooterComponent={
+        <>
+          {joined && visibleMessages.length ? (
+            <Text style={styles.linkSubtext}>Long-press a message to report it or block the sender.</Text>
+          ) : null}
+          <MessageActionSheet target={actionTarget} onClose={() => setActionTarget(null)} />
+        </>
+      }
       renderItem={({ item }) => (
-        <View style={styles.card}>
+        <Pressable
+          style={styles.card}
+          delayLongPress={350}
+          onLongPress={
+            item.userId && item.userId === user?.id
+              ? undefined
+              : () =>
+                  setActionTarget({
+                    table: 'group_messages',
+                    messageId: item.id,
+                    authorId: item.userId,
+                    authorName: item.author,
+                    text: item.text,
+                  })
+          }
+        >
           <Text style={styles.author}>{item.author}</Text>
           <Text style={styles.linkSubtext}>{item.time}</Text>
           <Text style={styles.postText}>{item.text}</Text>
-        </View>
+        </Pressable>
       )}
     />
   );
 }
 
+/** Campus fitness challenges the student can browse and join. */
 function ChallengesScreen({
   challenges,
   setChallenges,
@@ -1964,6 +2053,7 @@ function ChallengesScreen({
   );
 }
 
+/** Single challenge: rules, leaderboard-style stats, join actions. */
 function ChallengeDetailScreen({
   challenge,
   onBack,

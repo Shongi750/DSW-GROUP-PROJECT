@@ -2,12 +2,13 @@ import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
+// Splash: logo animation, then send user to Login after ~1.2s.
 export default function WelcomeScreen({ navigation }) {
   const fadeIn = useRef(new Animated.Value(0)).current;
   const scaleUp = useRef(new Animated.Value(0.85)).current;
   const pulse = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
+  useEffect(function runIntro() {
     Animated.parallel([
       Animated.timing(fadeIn, {
         toValue: 1,
@@ -40,11 +41,13 @@ export default function WelcomeScreen({ navigation }) {
       ]),
     ).start();
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(function goToLogin() {
       navigation.navigate("Login");
     }, 1200);
 
-    return () => clearTimeout(timer);
+    return function cleanup() {
+      clearTimeout(timer);
+    };
   }, [navigation, fadeIn, scaleUp, pulse]);
 
   return (

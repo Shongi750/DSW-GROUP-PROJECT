@@ -1,8 +1,13 @@
+/**
+ * MatchScreen — one mentor profile: send or withdraw a mentor request.
+ * Chat unlocks only after a request exists (same studentId + mentor.id in mentorRequests).
+ */
 import React, { useCallback, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../../../context/ThemeContext';
 import { useApp } from '../../../context/AppContext';
+import Avatar from '../../../components/Avatar';
 import { getMentorRequest, sendMentorRequest, withdrawMentorRequest } from '../lib/mentorRequests';
 
 const display = { fontFamily: 'Anton_400Regular', letterSpacing: 0.8 };
@@ -17,7 +22,7 @@ export default function MatchScreen({ route, navigation }) {
     year: 'N/A',
     level: 'Unknown',
     campus: 'APK',
-    photo: 'https://via.placeholder.com/60',
+    photo: '',
     expertise: 'Fitness',
     quote: 'Looking for someone to spot me on bench days and keep me accountable at 6 AM.',
   };
@@ -65,10 +70,7 @@ export default function MatchScreen({ route, navigation }) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Image
-          source={{ uri: mentor.photo || 'https://via.placeholder.com/60' }}
-          style={styles.avatar}
-        />
+        <Avatar name={mentor.name} uri={mentor.photo} size={60} style={styles.avatar} />
         <View style={styles.info}>
           <Text style={styles.name}>{mentor.name}</Text>
           <Text style={styles.subText}>{mentor.year} • {mentor.level}</Text>

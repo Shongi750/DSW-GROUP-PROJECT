@@ -1,6 +1,10 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { setupLooksComplete } from './profileStore';
 import { normalizePrivacy } from './privacy';
+import { beginCloudWrite, endCloudWrite, setSyncStatus } from './syncStatus';
+import { isOfflineError } from './syncQueueCore';
+import { queueWrite } from './syncQueue';
+import { isOnline } from './autoSync';
 
 function publicStudent(profile) {
   const privacy = normalizePrivacy(profile.privacy);
@@ -62,18 +66,30 @@ export async function fetchCloudUser(uid) {
 }
 
 export async function saveCloudUser(uid, profile) {
-  if (!isSupabaseConfigured || !supabase || !uid || !setupLooksComplete(profile)) return false;
+  if (!isSupabaseConfigured || !supabase) {
+    setSyncStatus('local');
+    return false;
+  }
+  if (!uid || !setupLooksComplete(profile)) return false;
   const payload = cloudPayload(uid, profile);
+  const row = { id: uid, email: profile.email || '', profile: { ...payload, public: publicStudent(profile) } };
+
+  // Offline: keep the latest profile in the sync queue; it goes up on reconnect.
+  if (!isOnline()) {
+    await queueWrite({ table: 'profiles', uid, row });
+    setSyncStatus('offline');
+    return false;
+  }
+
+  beginCloudWrite();
   try {
-    const { error } = await supabase.from('profiles').upsert({
-      id: uid,
-      email: profile.email || '',
-      profile: { ...payload, public: publicStudent(profile) },
-      updated_at: new Date().toISOString(),
-    });
+    const { error } = await supabase.from('profiles').upsert({ ...row, updated_at: new Date().toISOString() });
     if (error) throw error;
+    endCloudWrite(null);
     return true;
   } catch (error) {
+    if (isOfflineError(error)) await queueWrite({ table: 'profiles', uid, row });
+    endCloudWrite(error);
     console.warn('Cloud profile save skipped', error?.message || error);
     return false;
   }
@@ -98,6 +114,9 @@ export function mergeCloudProfile(local, remote) {
   Object.keys(remote).forEach((key) => {
     if (local[key] === '' || local[key] == null) next[key] = remote[key];
   });
+  // Keep roles from both copies, so a mentor role saved online is not lost on a new phone.
+  const roles = [...(Array.isArray(remote.roles) ? remote.roles : []), ...(Array.isArray(local.roles) ? local.roles : [])];
+  if (roles.length) next.roles = [...new Set(roles)];
   next.onboardingComplete = setupLooksComplete(next);
   return next;
 }

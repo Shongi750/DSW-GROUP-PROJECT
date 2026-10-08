@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,12 +35,21 @@ const GROUP_ICONS = {
 };
 
 function matchesQuery(program, query) {
-  const haystack = `${program.overlayTitle} ${program.overlaySubtitle} ${program.name} ${program.reason || ''} ${program.badge || ''}`.toLowerCase();
-  return haystack.includes(query);
+  const haystack =
+    program.overlayTitle +
+    ' ' +
+    program.overlaySubtitle +
+    ' ' +
+    program.name +
+    ' ' +
+    (program.reason || '') +
+    ' ' +
+    (program.badge || '');
+  return haystack.toLowerCase().includes(query);
 }
 
 function matchesClip(clip, query) {
-  return `${clip.title} ${clip.blurb} ${clip.creator}`.toLowerCase().includes(query);
+  return (clip.title + ' ' + clip.blurb + ' ' + clip.creator).toLowerCase().includes(query);
 }
 
 function PopularTile({ workout, onPress }) {
@@ -59,6 +68,7 @@ function PopularTile({ workout, onPress }) {
   );
 }
 
+// Browse tab — search, filters, clips, and optional “More” section.
 export default function WorkoutScreen({ navigation }) {
   const { recommendations, profile } = useApp();
   const { colors } = useTheme();
@@ -68,65 +78,95 @@ export default function WorkoutScreen({ navigation }) {
   const [workoutGroup, setWorkoutGroup] = useState('all');
   const [collectionId, setCollectionId] = useState('');
   const [showMore, setShowMore] = useState(false);
-  const week = useMemo(() => getWeekDays(), []);
-  const [selectedKey, setSelectedKey] = useState(week.find((d) => d.isToday)?.key);
-  const completedKeys = useMemo(() => daysWithSessions(profile?.history || []), [profile?.history]);
+
+  const week = getWeekDays();
+  const todayDay = week.find(function (d) {
+    return d.isToday;
+  });
+  const [selectedKey, setSelectedKey] = useState(todayDay ? todayDay.key : undefined);
+  const completedKeys = daysWithSessions((profile && profile.history) || []);
 
   const normalized = query.trim().toLowerCase();
   const collections = listCollections();
-  const readyWorkouts = collectionId
-    ? workoutsInCollection(collectionId).filter((item) => matchesQuery(item, normalized) || !normalized)
-    : listWorkouts(normalized, workoutGroup);
+  let readyWorkouts;
+  if (collectionId) {
+    readyWorkouts = workoutsInCollection(collectionId).filter(function (item) {
+      return matchesQuery(item, normalized) || !normalized;
+    });
+  } else {
+    readyWorkouts = listWorkouts(normalized, workoutGroup);
+  }
 
   const popularTiles = readyWorkouts.slice(0, 4);
   const listRows = readyWorkouts.slice(0, 8);
 
-  const reload = useCallback(() => {
+  function reload() {
     loadChallengeFeed().then(setFeed);
-    loadSavedSessions().then((saved) => setSavedSessions(Object.values(saved)));
-  }, []);
+    loadSavedSessions().then(function (saved) {
+      setSavedSessions(Object.values(saved));
+    });
+  }
 
   useFocusEffect(
-    useCallback(() => {
+    React.useCallback(function () {
       reload();
-    }, [reload]),
+    }, [])
   );
 
-  const popular = useMemo(
-    () => (normalized ? popularPrograms.filter((item) => matchesQuery(item, normalized)) : popularPrograms),
-    [normalized]
-  );
-  const recommended = useMemo(
-    () => (normalized ? recommendations.filter((item) => matchesQuery(item, normalized)) : recommendations.slice(0, 2)),
-    [normalized, recommendations]
-  );
+  const popular = normalized
+    ? popularPrograms.filter(function (item) {
+        return matchesQuery(item, normalized);
+      })
+    : popularPrograms;
 
-  const savedIds = useMemo(() => new Set((feed.saved || []).map((item) => item.id)), [feed.saved]);
-  const today = normalized ? feed.today.filter((item) => matchesClip(item, normalized)) : feed.today;
-  const saved = (normalized ? feed.saved.filter((item) => matchesClip(item, normalized)) : feed.saved).filter(
-    (item) => !today.some((clip) => clip.id === item.id)
-  );
+  const recommended = normalized
+    ? recommendations.filter(function (item) {
+        return matchesQuery(item, normalized);
+      })
+    : recommendations.slice(0, 2);
 
-  const openProgram = (program) => {
+  const savedIds = new Set((feed.saved || []).map(function (item) {
+    return item.id;
+  }));
+  const today = normalized
+    ? feed.today.filter(function (item) {
+        return matchesClip(item, normalized);
+      })
+    : feed.today;
+  const saved = (normalized
+    ? feed.saved.filter(function (item) {
+        return matchesClip(item, normalized);
+      })
+    : feed.saved
+  ).filter(function (item) {
+    return !today.some(function (clip) {
+      return clip.id === item.id;
+    });
+  });
+
+  function openProgram(program) {
     navigation.navigate('Exercises', { programId: program.id, title: program.name });
-  };
+  }
 
-  const openSession = (session) => {
-    if (session.exercises?.length) rememberExercises(session.exercises);
+  function openSession(session) {
+    if (session.exercises && session.exercises.length) {
+      rememberExercises(session.exercises);
+    }
     navigation.navigate('Exercises', { sessionId: session.id, title: session.name });
-  };
+  }
 
-  const sessions = useMemo(
-    () => (normalized ? WORKOUT_SESSIONS.filter((item) => matchesQuery(item, normalized)) : WORKOUT_SESSIONS),
-    [normalized]
-  );
+  const sessions = normalized
+    ? WORKOUT_SESSIONS.filter(function (item) {
+        return matchesQuery(item, normalized);
+      })
+    : WORKOUT_SESSIONS;
 
-  const startClip = (clip) => {
+  function startClip(clip) {
     const program = clip.programId ? getProgram(clip.programId) : null;
-    const moves = clip.moves?.length ? clip.moves : program?.moves;
-    const exerciseIds = clip.exerciseIds?.length ? clip.exerciseIds : program?.exerciseIds;
-    if (!moves?.length && !exerciseIds?.length) {
-      navigation.navigate('Clip', { clip });
+    const moves = (clip.moves && clip.moves.length) ? clip.moves : program && program.moves;
+    const exerciseIds = (clip.exerciseIds && clip.exerciseIds.length) ? clip.exerciseIds : program && program.exerciseIds;
+    if (!(moves && moves.length) && !(exerciseIds && exerciseIds.length)) {
+      navigation.navigate('Clip', { clip: clip });
       return;
     }
     navigation.navigate('PreStart', {
@@ -135,30 +175,32 @@ export default function WorkoutScreen({ navigation }) {
       level: 'Train',
       focus: clip.blurb || 'Clip',
       moves: (exerciseIds || moves).length,
-      exerciseIds: exerciseIds || moves.map((move) => move.id),
+      exerciseIds: exerciseIds || moves.map(function (move) {
+        return move.id;
+      }),
       programId: clip.programId || clip.id,
     });
-  };
+  }
 
-  const downloadClip = async (clip) => {
+  async function downloadClip(clip) {
     await saveClipOffline(clip);
     reload();
-  };
+  }
 
-  const startReadyWorkout = (workout) => {
+  function startReadyWorkout(workout) {
     navigation.navigate('PreStart', {
       title: workout.name,
       minutes: workout.minutes,
       level: workout.level,
       focus: workout.focus,
-      moves: workout.exerciseIds?.length || 0,
+      moves: (workout.exerciseIds && workout.exerciseIds.length) || 0,
       exerciseIds: workout.exerciseIds,
       programId: workout.id,
       workoutId: workout.id,
       group: workout.group,
       image: imageForWorkout(workout),
     });
-  };
+  }
 
   const challengeWorkout = readyWorkouts[0] || listWorkouts('', 'all')[0];
 
@@ -168,7 +210,11 @@ export default function WorkoutScreen({ navigation }) {
 
       <TouchableOpacity
         activeOpacity={0.92}
-        onPress={() => challengeWorkout && startReadyWorkout(challengeWorkout)}
+        onPress={function () {
+          if (challengeWorkout) {
+            startReadyWorkout(challengeWorkout);
+          }
+        }}
         style={styles.challengeWrap}
       >
         <LinearGradient
@@ -181,7 +227,7 @@ export default function WorkoutScreen({ navigation }) {
             <Text style={[styles.challengeKicker, { color: colors.accentBright }]}>NEW CHALLENGE</Text>
             <Text style={styles.challengeTitle}>2 weeks of campus energy</Text>
             <Text style={styles.challengeSub}>
-              {challengeWorkout ? `Start with ${challengeWorkout.name}` : 'Pick a workout below'}
+              {challengeWorkout ? 'Start with ' + challengeWorkout.name : 'Pick a workout below'}
             </Text>
           </View>
           <View style={[styles.challengeStart, { backgroundColor: colors.accent }]}>
@@ -195,18 +241,22 @@ export default function WorkoutScreen({ navigation }) {
         days={week}
         selectedKey={selectedKey}
         completedKeys={completedKeys}
-        onSelect={(item) => setSelectedKey(item.key)}
+        onSelect={function (item) {
+          setSelectedKey(item.key);
+        }}
       />
 
       {!collectionId ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, marginBottom: 4 }}>
           <View className="flex-row gap-2">
-            {WORKOUT_GROUPS.map((group) => {
+            {WORKOUT_GROUPS.map(function (group) {
               const selected = workoutGroup === group.id;
               return (
                 <TouchableOpacity
                   key={group.id}
-                  onPress={() => setWorkoutGroup(group.id)}
+                  onPress={function () {
+                    setWorkoutGroup(group.id);
+                  }}
                   style={[
                     styles.chip,
                     {
@@ -234,26 +284,40 @@ export default function WorkoutScreen({ navigation }) {
         <Text className="mb-3 text-muted">No workouts match that search.</Text>
       ) : (
         <View style={styles.popularGrid}>
-          {popularTiles.map((workout) => (
-            <PopularTile key={workout.id} workout={workout} onPress={() => startReadyWorkout(workout)} />
-          ))}
+          {popularTiles.map(function (workout) {
+            return (
+              <PopularTile
+                key={workout.id}
+                workout={workout}
+                onPress={function () {
+                  startReadyWorkout(workout);
+                }}
+              />
+            );
+          })}
         </View>
       )}
 
       <SectionTitle>Workouts</SectionTitle>
-      {listRows.map((workout) => (
-        <WorkoutListRow
-          key={workout.id}
-          image={imageForWorkout(workout)}
-          title={workout.name}
-          meta={`${workout.minutes} min · ${workout.focus}`}
-          level={workout.level}
-          onPress={() => startReadyWorkout(workout)}
-        />
-      ))}
+      {listRows.map(function (workout) {
+        return (
+          <WorkoutListRow
+            key={workout.id}
+            image={imageForWorkout(workout)}
+            title={workout.name}
+            meta={workout.minutes + ' min · ' + workout.focus}
+            level={workout.level}
+            onPress={function () {
+              startReadyWorkout(workout);
+            }}
+          />
+        );
+      })}
       {readyWorkouts.length > 8 ? (
         <TouchableOpacity
-          onPress={() => navigation.navigate('Exercises')}
+          onPress={function () {
+            navigation.navigate('Exercises');
+          }}
           style={{ paddingVertical: 10, marginBottom: 8 }}
         >
           <Text style={{ textAlign: 'center', color: colors.accent, fontWeight: '800' }}>Browse all exercises</Text>
@@ -261,7 +325,11 @@ export default function WorkoutScreen({ navigation }) {
       ) : null}
 
       <TouchableOpacity
-        onPress={() => setShowMore((v) => !v)}
+        onPress={function () {
+          setShowMore(function (v) {
+            return !v;
+          });
+        }}
         className="mt-4 mb-2 flex-row items-center justify-between py-2"
       >
         <Text className="text-base font-bold text-ink">More</Text>
@@ -272,13 +340,13 @@ export default function WorkoutScreen({ navigation }) {
           <SectionTitle style={{ marginTop: 8 }}>Collections</SectionTitle>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
             <View className="flex-row gap-3">
-              {collections.map((item) => {
+              {collections.map(function (item) {
                 const on = collectionId === item.id;
                 return (
                   <TouchableOpacity
                     key={item.id}
                     activeOpacity={0.9}
-                    onPress={() => {
+                    onPress={function () {
                       setCollectionId(on ? '' : item.id);
                       setWorkoutGroup('all');
                     }}
@@ -304,7 +372,9 @@ export default function WorkoutScreen({ navigation }) {
           <ClipRow
             videos={today}
             savedIds={savedIds}
-            onWatch={(clip) => navigation.navigate('Clip', { clip })}
+            onWatch={function (clip) {
+              navigation.navigate('Clip', { clip: clip });
+            }}
             onStart={startClip}
             onDownload={downloadClip}
           />
@@ -314,7 +384,9 @@ export default function WorkoutScreen({ navigation }) {
               <ClipRow
                 videos={saved}
                 savedIds={savedIds}
-                onWatch={(clip) => navigation.navigate('Clip', { clip })}
+                onWatch={function (clip) {
+                  navigation.navigate('Clip', { clip: clip });
+                }}
                 onStart={startClip}
               />
             </>
@@ -322,32 +394,44 @@ export default function WorkoutScreen({ navigation }) {
 
           <SectionTitle>Sessions</SectionTitle>
           <StartCardRow>
-            {sessions.map((session) => (
-              <StartCard
-                key={session.id}
-                title={session.name}
-                meta={session.meta || 'Session'}
-                badge={session.badge || 'Focus'}
-                onPress={() => openSession(session)}
-              />
-            ))}
+            {sessions.map(function (session) {
+              return (
+                <StartCard
+                  key={session.id}
+                  title={session.name}
+                  meta={session.meta || 'Session'}
+                  badge={session.badge || 'Focus'}
+                  onPress={function () {
+                    openSession(session);
+                  }}
+                />
+              );
+            })}
           </StartCardRow>
           {savedSessions.length ? (
             <>
               <SectionTitle>Downloaded</SectionTitle>
-              {savedSessions.map((session) => (
-                <GlassCard key={session.id} className="mb-2" onPress={() => openSession(session)}>
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text className="font-bold text-ink">{session.name}</Text>
-                      <Text className="mt-1 text-xs text-muted">
-                        {session.meta || `${session.exercises?.length || 0} moves`}
-                      </Text>
+              {savedSessions.map(function (session) {
+                return (
+                  <GlassCard
+                    key={session.id}
+                    className="mb-2"
+                    onPress={function () {
+                      openSession(session);
+                    }}
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-1 pr-3">
+                        <Text className="font-bold text-ink">{session.name}</Text>
+                        <Text className="mt-1 text-xs text-muted">
+                          {session.meta || (session.exercises && session.exercises.length) + ' moves'}
+                        </Text>
+                      </View>
+                      <Ionicons name="checkmark-circle" size={20} color="#FF6A00" />
                     </View>
-                    <Ionicons name="checkmark-circle" size={20} color="#FF6A00" />
-                  </View>
-                </GlassCard>
-              ))}
+                  </GlassCard>
+                );
+              })}
             </>
           ) : null}
           <SectionTitle>Programs</SectionTitle>

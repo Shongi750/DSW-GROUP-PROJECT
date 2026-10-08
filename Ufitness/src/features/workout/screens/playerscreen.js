@@ -9,43 +9,61 @@ import { GlassScreen } from '../components/glass';
 import PrimaryButton from '../components/button';
 import { normalizeMoves } from '../lib/session';
 import { openWorkoutMusic } from '../lib/music';
-import { GOAL_MUSIC } from '../data/music';
+import { GOAL_MUSIC, getPlatform, moodQueryForPhase } from '../data/music';
 import { useWorkoutLeave } from '../context/LeaveContext';
 import { useActiveSession } from '../../../context/ActiveSessionContext';
 
 const READY_SECONDS = 3;
 
-function buzz(kind = 'light') {
+// --- Small UI helpers ---
+
+function buzz(kind) {
+  if (!kind) {
+    kind = 'light';
+  }
   try {
     const Haptics = require('expo-haptics');
-    if (kind === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  } catch {
-    // optional
+    if (kind === 'success') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  } catch (e) {
+    // haptics are optional on web / simulators
   }
 }
 
 function formatTime(total) {
   const m = Math.floor(total / 60);
   const s = total % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
-function Stepper({ label, value, onChange, step = 1, min = 0, colors }) {
+function Stepper({ label, value, onChange, step, min, colors }) {
+  if (step === undefined) {
+    step = 1;
+  }
+  if (min === undefined) {
+    min = 0;
+  }
   return (
     <View style={styles.stepper}>
       <Text style={[styles.stepLabel, { color: colors.muted }]}>{label}</Text>
       <View style={styles.stepRow}>
         <TouchableOpacity
           style={[styles.stepBtn, { backgroundColor: colors.card }]}
-          onPress={() => onChange(Math.max(min, Math.round((value - step) * 10) / 10))}
+          onPress={function () {
+            onChange(Math.max(min, Math.round((value - step) * 10) / 10));
+          }}
         >
           <Ionicons name="remove" size={16} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={[styles.stepValue, { color: colors.text }]}>{value}</Text>
         <TouchableOpacity
           style={[styles.stepBtn, { backgroundColor: colors.card }]}
-          onPress={() => onChange(Math.round((value + step) * 10) / 10)}
+          onPress={function () {
+            onChange(Math.round((value + step) * 10) / 10);
+          }}
         >
           <Ionicons name="add" size={16} color="#FFFFFF" />
         </TouchableOpacity>
@@ -54,92 +72,214 @@ function Stepper({ label, value, onChange, step = 1, min = 0, colors }) {
   );
 }
 
+// --- Main player: timers, sets logging, minimize/resume, music ---
+
 export default function PlayerScreen({ navigation, route }) {
   const { colors } = useTheme();
-  const { completeExercise, completeMany, logSession, getExercise, profile, program, plan } = useApp();
-  const { startSession, updateSession, endSession } = useActiveSession();
+  const app = useApp();
+  const completeExercise = app.completeExercise;
+  const completeMany = app.completeMany;
+  const logSession = app.logSession;
+  const getExercise = app.getExercise;
+  const profile = app.profile;
+  const program = app.program;
+  const plan = app.plan;
+
+  const activeCtx = useActiveSession();
+  const startSession = activeCtx.startSession;
+  const updateSession = activeCtx.updateSession;
+  const minimizeSession = activeCtx.minimizeSession;
+  const endSession = activeCtx.endSession;
+
   const { onLeave } = useWorkoutLeave();
-  const minimize = () => (onLeave ? onLeave() : navigation.goBack());
-  const [moves, setMoves] = useState(() =>
-    normalizeMoves(
-      route.params?.moves || (route.params?.exerciseIds || ['arm-circles']).map((id) => ({ id })),
-      getExercise
-    )
-  );
-  const programId = route.params?.programId || FLOOR_PLAN.id;
-  const sessionId = route.params?.sessionId;
-  const startedAt = useRef(Date.now());
-  const [index, setIndex] = useState(route.params?.startIndex || 0);
-  const [setNo, setSetNo] = useState(0);
-  const [phase, setPhase] = useState('ready');
-  const [readyLeft, setReadyLeft] = useState(READY_SECONDS);
-  const [remaining, setRemaining] = useState(30);
-  const [restLeft, setRestLeft] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [reps, setReps] = useState(10);
-  const [weightKg, setWeightKg] = useState(0);
-  const doneRef = useRef(new Set());
-  const setsLogRef = useRef([]);
+  const params = route.params || {};
+  const resume = params.resume || null;
+  const leavingForMinimize = useRef(false);
+
+  // --- Session state (restored from route.params.resume when coming back from Home) ---
+
+  const [moves, setMoves] = useState(function () {
+    const fromRoute =
+      (resume && resume.moves) ||
+      params.moves ||
+      (params.exerciseIds || ['arm-circles']).map(function (id) {
+        return { id: id };
+      });
+    return normalizeMoves(fromRoute, getExercise);
+  });
+
+  const programId = (resume && resume.programId) || params.programId || FLOOR_PLAN.id;
+  const sessionId = (resume && resume.sessionId) || params.sessionId;
+  const startedAt = useRef((resume && resume.startedAt) || Date.now());
+  const [index, setIndex] = useState((resume && resume.index) || params.startIndex || 0);
+  const [setNo, setSetNo] = useState((resume && resume.setNo) || 0);
+  const [phase, setPhase] = useState((resume && resume.phase) || 'ready');
+  const [readyLeft, setReadyLeft] = useState(resume && resume.readyLeft !== undefined ? resume.readyLeft : READY_SECONDS);
+  const [remaining, setRemaining] = useState((resume && resume.remaining) || 30);
+  const [restLeft, setRestLeft] = useState((resume && resume.restLeft) || 0);
+  const [paused, setPaused] = useState(Boolean(resume && resume.paused));
+  const [reps, setReps] = useState((resume && resume.reps) || 10);
+  const [weightKg, setWeightKg] = useState((resume && resume.weightKg) || 0);
+  const doneRef = useRef(new Set((resume && resume.doneIds) || []));
+  const setsLogRef = useRef((resume && resume.setsLog) || []);
   const advancedForIndex = useRef(null);
 
   const musicStarted = useRef(false);
+  const [musicNote, setMusicNote] = useState('');
   const platformId = profile.musicPlatform || 'spotify';
-  const startMusic = () => {
-    const goalQuery = (GOAL_MUSIC[profile.goal] || GOAL_MUSIC.hypertrophy).query;
-    return openWorkoutMusic({
-      platformId,
-      savedLink: profile.musicLinks?.[platformId],
-      query: goalQuery,
-    });
-  };
+  const platform = getPlatform(platformId);
 
-  useEffect(() => {
-    if (!profile.musicAutoOpen || musicStarted.current) return;
+  // --- Music: open Spotify/Apple/etc. with playlist or mood search ---
+
+  function musicQueryForCurrentPhase() {
+    const goalBlock = GOAL_MUSIC[profile.goal] || GOAL_MUSIC.hypertrophy;
+    if (phase === 'ready') {
+      return moodQueryForPhase('ready');
+    }
+    if (phase === 'rest') {
+      return moodQueryForPhase('rest');
+    }
+    if (phase === 'go') {
+      return moodQueryForPhase('go');
+    }
+    return goalBlock.query;
+  }
+
+  async function startMusic() {
+    const opened = await openWorkoutMusic({
+      platformId: platformId,
+      savedLink: profile.musicLinks && profile.musicLinks[platformId],
+      query: musicQueryForCurrentPhase(),
+    });
+    if (opened) {
+      setMusicNote('Opened ' + platform.name);
+    } else {
+      setMusicNote('Could not open ' + platform.name);
+    }
+    setTimeout(function () {
+      setMusicNote('');
+    }, 2500);
+  }
+
+  // --- Minimize: save snapshot so Home can resume the same move/timer ---
+
+  function buildResumePayload() {
+    const move = moves[index];
+    const ex = move ? getExercise(move.id) : null;
+    return {
+      title: params.title || (program && program.goal && program.goal.name) || (plan && plan.name) || 'Workout',
+      programId: programId,
+      sessionId: sessionId,
+      startedAt: startedAt.current,
+      index: index,
+      setNo: setNo,
+      phase: phase === 'ready' ? 'go' : phase,
+      readyLeft: 0,
+      remaining: remaining,
+      restLeft: restLeft,
+      paused: true,
+      reps: reps,
+      weightKg: weightKg,
+      moves: moves,
+      exerciseIds: moves.map(function (m) {
+        return m.id;
+      }),
+      doneIds: [...doneRef.current],
+      setsLog: setsLogRef.current,
+      movesTotal: moves.length,
+      currentMove: (ex && ex.name) || '',
+    };
+  }
+
+  function minimize() {
+    leavingForMinimize.current = true;
+    minimizeSession(buildResumePayload());
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+    if (onLeave) {
+      onLeave();
+    }
+  }
+
+  useEffect(function () {
+    const shouldOpen = params.openMusic === true || profile.musicAutoOpen;
+    if (!shouldOpen || musicStarted.current) {
+      return;
+    }
     musicStarted.current = true;
     startMusic();
   }, [profile.musicAutoOpen]);
 
   const current = moves[index];
   const nextMove = moves[index + 1];
-  const exercise = useMemo(() => (current ? getExercise(current.id) : null), [current, getExercise]);
+  const exercise = useMemo(
+    function () {
+      return current ? getExercise(current.id) : null;
+    },
+    [current, getExercise]
+  );
   const nextExercise = nextMove ? getExercise(nextMove.id) : null;
-  const isSets = current?.mode === 'sets';
-  const progress = moves.length ? (index + (phase === 'go' || phase === 'rest' || phase === 'advance' ? 0.35 : 0)) / moves.length : 0;
+  const isSets = current && current.mode === 'sets';
+  const progress = moves.length
+    ? (index + (phase === 'go' || phase === 'rest' || phase === 'advance' ? 0.35 : 0)) / moves.length
+    : 0;
 
-  useEffect(() => {
+  // --- Active session pill (shown on Home when minimized) ---
+
+  useEffect(function () {
     startSession({
-      title: route.params?.title || program?.goal?.name || plan?.name || 'Workout',
+      title: params.title || (program && program.goal && program.goal.name) || (plan && plan.name) || 'Workout',
       startedAt: startedAt.current,
       movesTotal: moves.length,
-      currentMove: exercise?.name || '',
+      movesDone: doneRef.current.size,
+      currentMove: (exercise && exercise.name) || '',
+      minimized: false,
+      resume: null,
     });
-    return () => endSession();
+    return function () {
+      if (!leavingForMinimize.current) {
+        endSession();
+      }
+    };
   }, []);
 
-  useEffect(() => {
+  useEffect(function () {
     updateSession({
       movesDone: doneRef.current.size,
-      currentMove: exercise?.name || '',
+      currentMove: (exercise && exercise.name) || '',
       state: phase === 'rest' ? 'Rest' : paused ? 'Paused' : 'Live',
+      minimized: false,
     });
-  }, [index, exercise?.id, phase, paused, updateSession]);
+  }, [index, exercise && exercise.id, phase, paused, updateSession]);
 
-  useEffect(() => {
+  const skipIndexReset = useRef(Boolean(resume));
+
+  // When the user skips to another move, reset timers for that exercise.
+  useEffect(function () {
+    if (skipIndexReset.current) {
+      skipIndexReset.current = false;
+      return;
+    }
     advancedForIndex.current = null;
     setPhase('ready');
     setReadyLeft(READY_SECONDS);
     setPaused(false);
     setSetNo(0);
-    setRemaining(current?.duration || exercise?.duration || 30);
-    const last = profile.lastSets?.[current?.id];
-    setReps(last?.reps || current?.reps || 10);
-    setWeightKg(last?.weightKg || current?.weightKg || 0);
-  }, [index, current?.id]);
+    setRemaining((current && current.duration) || (exercise && exercise.duration) || 30);
+    const last = profile.lastSets && profile.lastSets[current && current.id];
+    setReps((last && last.reps) || (current && current.reps) || 10);
+    setWeightKg((last && last.weightKg) || (current && current.weightKg) || 0);
+  }, [index, current && current.id]);
 
-  useEffect(() => {
-    if (phase !== 'ready') return undefined;
-    const timer = setInterval(() => {
-      setReadyLeft((value) => {
+  // --- Timers: ready countdown, work interval, rest between sets ---
+
+  useEffect(function () {
+    if (phase !== 'ready') {
+      return undefined;
+    }
+    const timer = setInterval(function () {
+      setReadyLeft(function (value) {
         if (value <= 1) {
           clearInterval(timer);
           buzz('light');
@@ -149,31 +289,41 @@ export default function PlayerScreen({ navigation, route }) {
         return value - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
+    return function () {
+      clearInterval(timer);
+    };
   }, [phase, index]);
 
-  useEffect(() => {
-    if (phase !== 'go' || paused || isSets) return undefined;
-    const timer = setTimeout(() => {
-      setRemaining((value) => {
+  useEffect(function () {
+    if (phase !== 'go' || paused || isSets) {
+      return undefined;
+    }
+    const timer = setTimeout(function () {
+      setRemaining(function (value) {
         if (value <= 1) {
-          setPhase(current?.rest ? 'rest' : 'advance');
-          setRestLeft(current?.rest || 0);
+          setPhase(current && current.rest ? 'rest' : 'advance');
+          setRestLeft((current && current.rest) || 0);
           return 0;
         }
         return value - 1;
       });
     }, 1000);
-    return () => clearTimeout(timer);
-  }, [phase, paused, remaining, index, current?.rest, isSets]);
+    return function () {
+      clearTimeout(timer);
+    };
+  }, [phase, paused, remaining, index, current && current.rest, isSets]);
 
-  useEffect(() => {
-    if (phase !== 'rest') return undefined;
-    const timer = setTimeout(() => {
-      setRestLeft((value) => {
+  useEffect(function () {
+    if (phase !== 'rest') {
+      return undefined;
+    }
+    const timer = setTimeout(function () {
+      setRestLeft(function (value) {
         if (value <= 1) {
-          if (isSets && setNo + 1 < (current.sets || 1)) {
-            setSetNo((n) => n + 1);
+          if (isSets && setNo + 1 < ((current && current.sets) || 1)) {
+            setSetNo(function (n) {
+              return n + 1;
+            });
             setPhase('go');
             return 0;
           }
@@ -183,83 +333,108 @@ export default function PlayerScreen({ navigation, route }) {
         return value - 1;
       });
     }, 1000);
-    return () => clearTimeout(timer);
-  }, [phase, restLeft, index, isSets, setNo, current?.sets]);
+    return function () {
+      clearTimeout(timer);
+    };
+  }, [phase, restLeft, index, isSets, setNo, current && current.sets]);
 
-  const finishMove = () => {
-    if (!exercise) return;
+  function finishMove() {
+    if (!exercise) {
+      return;
+    }
     doneRef.current.add(exercise.id);
     completeExercise(exercise.id);
     buzz(index < moves.length - 1 ? 'light' : 'success');
     if (index < moves.length - 1) {
-      setIndex((value) => value + 1);
+      setIndex(function (value) {
+        return value + 1;
+      });
     } else {
       completeMany([...doneRef.current]);
       logSession({
         exerciseIds: [...doneRef.current],
         minutes: Math.max(1, Math.round((Date.now() - startedAt.current) / 60000)),
-        programId,
-        sessionId,
+        programId: programId,
+        sessionId: sessionId,
         setsLog: setsLogRef.current,
       });
       setPhase('done');
     }
-  };
+  }
 
-  useEffect(() => {
-    if (phase !== 'advance' || !exercise) return;
-    if (advancedForIndex.current === index) return;
+  useEffect(function () {
+    if (phase !== 'advance' || !exercise) {
+      return;
+    }
+    if (advancedForIndex.current === index) {
+      return;
+    }
     advancedForIndex.current = index;
     finishMove();
   }, [phase, exercise, index]);
 
-  const logSet = () => {
-    const existing = setsLogRef.current.find((item) => item.id === current.id);
-    const row = { reps, weightKg };
-    if (existing) existing.sets.push(row);
-    else setsLogRef.current.push({ id: current.id, sets: [row] });
+  function logSet() {
+    const existing = setsLogRef.current.find(function (item) {
+      return item.id === current.id;
+    });
+    const row = { reps: reps, weightKg: weightKg };
+    if (existing) {
+      existing.sets.push(row);
+    } else {
+      setsLogRef.current.push({ id: current.id, sets: [row] });
+    }
     buzz('light');
-    if (setNo + 1 < (current.sets || 1)) {
-      setRestLeft(current.rest || 20);
+    if (setNo + 1 < ((current && current.sets) || 1)) {
+      setRestLeft((current && current.rest) || 20);
       setPhase('rest');
-    } else if (current.rest) {
+    } else if (current && current.rest) {
       setRestLeft(current.rest);
       setPhase('rest');
     } else {
       setPhase('advance');
     }
-  };
+  }
 
-  const swap = () => {
-    if (!current?.swapId) return;
-    setMoves((list) =>
-      list.map((item, i) => (i === index ? { ...item, id: item.swapId, swapId: item.id, swapped: true } : item))
-    );
-  };
+  function swap() {
+    if (!current || !current.swapId) {
+      return;
+    }
+    setMoves(function (list) {
+      return list.map(function (item, i) {
+        if (i === index) {
+          return { ...item, id: item.swapId, swapId: item.id, swapped: true };
+        }
+        return item;
+      });
+    });
+  }
 
-  const finishEarly = () => {
-    const finished = [...doneRef.current, exercise?.id].filter(Boolean);
+  function finishEarly() {
+    const finished = [...doneRef.current, exercise && exercise.id].filter(Boolean);
     completeMany(finished);
     logSession({
       exerciseIds: finished,
       minutes: Math.max(1, Math.round((Date.now() - startedAt.current) / 60000)),
-      programId,
-      sessionId,
+      programId: programId,
+      sessionId: sessionId,
       setsLog: setsLogRef.current,
     });
     setPhase('done');
-  };
+  }
 
-  useEffect(() => {
-    if (phase !== 'done') return;
+  useEffect(function () {
+    if (phase !== 'done') {
+      return;
+    }
+    endSession();
     const minutes = Math.max(1, Math.round((Date.now() - startedAt.current) / 60000));
     navigation.replace('Finish', {
-      minutes,
+      minutes: minutes,
       moves: doneRef.current.size,
       title: 'Workout complete',
-      programId,
+      programId: programId,
     });
-  }, [phase, navigation, programId]);
+  }, [phase, navigation, programId, endSession]);
 
   if (phase === 'done') {
     return (
@@ -269,11 +444,23 @@ export default function PlayerScreen({ navigation, route }) {
     );
   }
 
-  if (!exercise) return null;
+  if (!exercise) {
+    return null;
+  }
+
+  // --- Shared chrome ---
 
   const bar = (
     <View style={[styles.track, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
-      <View style={[styles.fill, { width: `${Math.min(100, Math.max(6, progress * 100))}%`, backgroundColor: colors.accent }]} />
+      <View
+        style={[
+          styles.fill,
+          {
+            width: Math.min(100, Math.max(6, progress * 100)) + '%',
+            backgroundColor: colors.accent,
+          },
+        ]}
+      />
     </View>
   );
 
@@ -282,9 +469,12 @@ export default function PlayerScreen({ navigation, route }) {
       <TouchableOpacity style={styles.iconBtn} onPress={minimize}>
         <Ionicons name="chevron-down" size={22} color="#FFFFFF" />
       </TouchableOpacity>
-      <Text style={styles.progressLabel}>
-        {index + 1} / {moves.length}
-      </Text>
+      <View style={{ alignItems: 'center' }}>
+        <Text style={styles.progressLabel}>
+          {index + 1} / {moves.length}
+        </Text>
+        {musicNote ? <Text style={{ color: colors.accent, fontSize: 11, fontWeight: '700' }}>{musicNote}</Text> : null}
+      </View>
       <TouchableOpacity style={styles.iconBtn} onPress={startMusic}>
         <Ionicons name="musical-notes" size={18} color={colors.accent} />
       </TouchableOpacity>
@@ -293,7 +483,7 @@ export default function PlayerScreen({ navigation, route }) {
 
   const media = (
     <View style={styles.media}>
-      {exercise.gifUrl || exercise.photoFrames?.length ? (
+      {exercise.gifUrl || (exercise.photoFrames && exercise.photoFrames.length) ? (
         <ExerciseGif
           uri={exercise.gifUrl}
           frames={exercise.photoFrames}
@@ -319,6 +509,8 @@ export default function PlayerScreen({ navigation, route }) {
     </View>
   );
 
+  // --- Ready / rest screens ---
+
   if (phase === 'ready' || phase === 'rest') {
     return (
       <GlassScreen scroll={false} contentClassName="flex-1">
@@ -329,10 +521,10 @@ export default function PlayerScreen({ navigation, route }) {
           {phase === 'rest' ? 'REST' : 'GET READY'}
         </Text>
         <Text style={[styles.moveTitle, { color: colors.text }]}>
-          {phase === 'rest' && isSets && setNo + 1 < (current.sets || 1)
-            ? `Set ${setNo + 2} · ${exercise.name}`
+          {phase === 'rest' && isSets && setNo + 1 < ((current && current.sets) || 1)
+            ? 'Set ' + (setNo + 2) + ' · ' + exercise.name
             : phase === 'rest'
-              ? nextExercise?.name || 'Almost done'
+              ? (nextExercise && nextExercise.name) || 'Almost done'
               : exercise.name}
         </Text>
         <View style={styles.countdownWrap}>
@@ -342,13 +534,19 @@ export default function PlayerScreen({ navigation, route }) {
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => {
+            onPress={function () {
               if (phase === 'rest') {
-                if (isSets && setNo + 1 < (current.sets || 1)) {
-                  setSetNo((n) => n + 1);
+                if (isSets && setNo + 1 < ((current && current.sets) || 1)) {
+                  setSetNo(function (n) {
+                    return n + 1;
+                  });
                   setPhase('go');
-                } else setPhase('advance');
-              } else setPhase('go');
+                } else {
+                  setPhase('advance');
+                }
+              } else {
+                setPhase('go');
+              }
             }}
             style={[styles.skipPill, { backgroundColor: colors.accent }]}
           >
@@ -359,6 +557,8 @@ export default function PlayerScreen({ navigation, route }) {
       </GlassScreen>
     );
   }
+
+  // --- Active work / sets ---
 
   return (
     <GlassScreen scroll={false} contentClassName="flex-1">
@@ -381,7 +581,7 @@ export default function PlayerScreen({ navigation, route }) {
             <Stepper label="kg" value={weightKg} onChange={setWeightKg} step={0.5} min={0} colors={colors} />
           </View>
           <View style={{ marginTop: 16 }}>
-            <PrimaryButton title={`Log set ${setNo + 1}`} icon="checkmark" onPress={logSet} />
+            <PrimaryButton title={'Log set ' + (setNo + 1)} icon="checkmark" onPress={logSet} />
           </View>
         </>
       ) : null}
@@ -401,13 +601,24 @@ export default function PlayerScreen({ navigation, route }) {
       {nextCard}
 
       <View style={styles.controls}>
-        <TouchableOpacity onPress={() => index > 0 && setIndex(index - 1)} style={styles.controlBtn}>
+        <TouchableOpacity
+          onPress={function () {
+            if (index > 0) {
+              setIndex(index - 1);
+            }
+          }}
+          style={styles.controlBtn}
+        >
           <Ionicons name="play-skip-back" size={26} color="#FFFFFF" />
         </TouchableOpacity>
         {!isSets ? (
           <TouchableOpacity
             style={[styles.playBtn, { backgroundColor: colors.accent }]}
-            onPress={() => setPaused((value) => !value)}
+            onPress={function () {
+              setPaused(function (value) {
+                return !value;
+              });
+            }}
           >
             <Ionicons name={paused ? 'play' : 'pause'} size={28} color="#FFFFFF" />
           </TouchableOpacity>
@@ -417,9 +628,12 @@ export default function PlayerScreen({ navigation, route }) {
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          onPress={() => {
-            if (index >= moves.length - 1) finishEarly();
-            else setIndex(index + 1);
+          onPress={function () {
+            if (index >= moves.length - 1) {
+              finishEarly();
+            } else {
+              setIndex(index + 1);
+            }
           }}
           style={styles.controlBtn}
         >

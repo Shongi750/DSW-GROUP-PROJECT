@@ -15,6 +15,7 @@ import {
   getRapidApiKey,
 } from '../lib/exercisedb';
 import { rememberedExercise } from '../lib/sessionApi';
+import { downloadedExercise, primeDownloadedExercises } from '../lib/workoutDownloads';
 import { FLOOR_PLAN } from '../data/floorPlan';
 import { getTodayPlan } from '../data/planEngine';
 import { applyMainProfileSeed } from '../lib/seedFromMain';
@@ -33,6 +34,7 @@ const defaultProfile = {
   goal: null,
   equipmentTier: 'bodyweight',
   experience: 'new',
+  planBoost: 0,
   musicPlatform: 'spotify',
   musicLinks: {},
   musicAutoOpen: false,
@@ -62,6 +64,7 @@ function migrateProfile(parsed) {
     goal: parsed.goal || null,
     equipmentTier: parsed.equipmentTier || 'bodyweight',
     experience: parsed.experience || 'new',
+    planBoost: Math.max(0, Number(parsed.planBoost) || 0),
     musicPlatform: parsed.musicPlatform || 'spotify',
     musicLinks: parsed.musicLinks || {},
     musicAutoOpen: parsed.musicAutoOpen ?? false,
@@ -93,6 +96,11 @@ export function AppProvider({ children }) {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [bodyParts, setBodyParts] = useState(FALLBACK_BODY_PARTS);
   const [hasApiKey, setHasApiKey] = useState(false);
+
+  // Downloaded workouts: load their exercises so they work offline.
+  useEffect(() => {
+    primeDownloadedExercises().catch(() => {});
+  }, []);
 
   const refreshCatalog = useCallback(async (key) => {
     setCatalogLoading(true);
@@ -224,6 +232,7 @@ export function AppProvider({ children }) {
     const patch = applyMainProfileSeed(mainProfile, profile);
     if (!patch) return;
     persist({ ...profile, ...patch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-seed when main identity fields change
   }, [
     ready,
     mainProfile?.fitnessGoal,
@@ -232,6 +241,7 @@ export function AppProvider({ children }) {
     mainProfile?.workoutPreference,
     mainProfile?.gender,
     mainProfile?.daysPerWeek,
+    mainProfile?.onboardingComplete,
   ]);
 
   const value = useMemo(() => {
@@ -279,7 +289,11 @@ export function AppProvider({ children }) {
       connectExerciseDb,
       searchRemote,
       loadBodyPart,
-      getExercise: (id) => lookupExercise(id, catalog) || rememberedExercise(id),
+      // Offline (built-in catalog only): prefer the downloaded copy, which has photos + how-to.
+      getExercise: (id) =>
+        (catalogSource === 'local' && downloadedExercise(id)) ||
+        lookupExercise(id, catalog) ||
+        rememberedExercise(id),
       updateProfile: (patch) => persist({ ...profile, ...patch }),
       completeOnboarding: (patch = {}) =>
         persist({

@@ -9,8 +9,15 @@ import { resolveTrainWeekdays, trainDayLabels } from '../lib/trainDays';
 
 export default function DaysScreen({ navigation }) {
   const { profile, updateProfile } = useApp();
-  const [days, setDays] = useState(() => resolveTrainWeekdays(profile));
+  const [days, setDays] = useState(function () {
+    return resolveTrainWeekdays(profile);
+  });
   const split = getSplit(profile.goal, days.length);
+
+  function goNext() {
+    updateProfile({ trainWeekdays: days, daysPerWeek: days.length });
+    navigation.navigate('Campus');
+  }
 
   return (
     <GlassScreen>
@@ -30,14 +37,7 @@ export default function DaysScreen({ navigation }) {
       ) : null}
 
       <View className="mt-6">
-        <PrimaryButton
-          title="NEXT"
-          icon="arrow-forward"
-          onPress={() => {
-            updateProfile({ trainWeekdays: days, daysPerWeek: days.length });
-            navigation.navigate('Campus');
-          }}
-        />
+        <PrimaryButton title="NEXT" icon="arrow-forward" onPress={goNext} />
       </View>
     </GlassScreen>
   );

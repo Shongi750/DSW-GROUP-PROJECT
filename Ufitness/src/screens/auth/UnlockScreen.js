@@ -4,45 +4,64 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authenticateUnlock, biometricLabel } from '../../lib/biometrics';
+import { friendlyAuthError, AUTH_HINTS } from '../../lib/authErrors';
 import AuthBackdrop, { GlassSheet } from './AuthBackdrop';
 
 const UJ_LOGO = require('../../../assets/uj-gym-logo.png');
 
+// Shown when they reopen the app with biometrics turned on.
+// Tries Face ID / fingerprint first, password is the fallback.
 export default function UnlockScreen() {
   const { unlockSession, logout, user } = useApp();
   const { colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState('biometrics');
 
-  useEffect(() => {
-    biometricLabel().then(setLabel);
+  useEffect(function () {
+    biometricLabel().then(function (name) {
+      setLabel(name);
+    });
   }, []);
 
-  const handleUnlock = async (silent) => {
+  // silent=true means "try on open, don't show an alert if they cancel"
+  async function handleUnlock(silent) {
     setBusy(true);
     try {
-      const ok = await authenticateUnlock(`Unlock UFitness with ${label}`);
-      if (ok) unlockSession();
-      else if (!silent) {
-        Alert.alert('Not recognized', `Try ${label} again, or sign in with your password.`);
+      const ok = await authenticateUnlock('Unlock UFitness with ' + label);
+      if (ok) {
+        unlockSession();
+      } else if (!silent) {
+        Alert.alert(
+          'Not recognized',
+          'Try ' + label + ' again, or sign in with your password.'
+        );
       }
     } catch (error) {
-      if (!silent) Alert.alert('Could not unlock', error?.message || 'Try your password.');
+      if (!silent) {
+        Alert.alert('Could not unlock', friendlyAuthError(error) || AUTH_HINTS.unlockFailed);
+      }
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  useEffect(() => {
+  // auto-prompt once when the screen mounts
+  useEffect(function () {
     handleUnlock(true);
   }, []);
 
-  const handlePassword = () => {
-    Alert.alert('Use password', 'This signs you out of the saved session so you can type your password.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Continue', onPress: () => logout() },
-    ]);
-  };
+  function handlePassword() {
+    Alert.alert(
+      'Use password',
+      'This signs you out of the saved session so you can type your password.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', onPress: function () { logout(); } },
+      ]
+    );
+  }
+
+  const email = (user && user.email) || 'Saved session';
 
   return (
     <AuthBackdrop>
@@ -58,11 +77,11 @@ export default function UnlockScreen() {
         <GlassSheet>
           <Text style={styles.title}>Welcome back</Text>
           <Text style={styles.subtitle}>
-            {user?.email || 'Saved session'} is signed in. Unlock with {label}.
+            {email} is signed in. Unlock with {label}.
           </Text>
           <TouchableOpacity
             style={[styles.unlockButton, { backgroundColor: colors.accent }]}
-            onPress={() => handleUnlock(false)}
+            onPress={function () { handleUnlock(false); }}
             disabled={busy}
             activeOpacity={0.9}
           >

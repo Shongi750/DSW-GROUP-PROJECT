@@ -5,9 +5,15 @@ import { GlassCard, GlassScreen } from '../components/glass';
 import PrimaryButton from '../components/button';
 import { CAMPUSES } from '../data/onboardingOptions';
 
+// Workout-side campus pick (same list as main onboarding)
 export default function CampusScreen({ navigation }) {
   const { profile, updateProfile } = useApp();
   const [campus, setCampus] = useState(profile.campus || '');
+
+  function goNext() {
+    updateProfile({ campus: campus });
+    navigation.navigate('Limits');
+  }
 
   return (
     <GlassScreen>
@@ -17,25 +23,23 @@ export default function CampusScreen({ navigation }) {
         Buddies are matched with students on the same campus so you can train together.
       </Text>
 
-      {CAMPUSES.map((item) => (
-        <GlassCard
-          key={item.value}
-          className={`mb-3 ${campus === item.value ? 'border-accent' : ''}`}
-          onPress={() => setCampus(item.value)}
-        >
-          <Text className="text-lg font-extrabold text-ink">{item.label}</Text>
-        </GlassCard>
-      ))}
+      {CAMPUSES.map(function (item) {
+        const selected = campus === item.value;
+        return (
+          <GlassCard
+            key={item.value}
+            className={'mb-3 ' + (selected ? 'border-accent' : '')}
+            onPress={function () {
+              setCampus(item.value);
+            }}
+          >
+            <Text className="text-lg font-extrabold text-ink">{item.label}</Text>
+          </GlassCard>
+        );
+      })}
 
       <View className="mt-6">
-        <PrimaryButton
-          title="NEXT"
-          icon="arrow-forward"
-          onPress={() => {
-            updateProfile({ campus });
-            navigation.navigate('Limits');
-          }}
-        />
+        <PrimaryButton title="NEXT" icon="arrow-forward" onPress={goNext} />
       </View>
     </GlassScreen>
   );
