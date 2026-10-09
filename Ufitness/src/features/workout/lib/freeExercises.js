@@ -1,5 +1,6 @@
 import { exercises as localExercises } from '../data/exercises';
 import { planFreeExerciseIds } from '../data/movements';
+import { READY_FREE_EXERCISE_IDS } from '../data/readyWorkouts';
 
 const FREE_URL =
   'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json';
@@ -119,12 +120,15 @@ export function enrichLocalWithFree(local, freeList) {
   });
 }
 
-// Exercises the generated plans reference are always included; the rest of the browse
+// Exercises the generated plans and ready-made gym workouts reference are always included; the rest of the browse
 // catalog stays bodyweight-friendly and capped so the list is not endless.
 export function openExtras(freeList, excludeNames = new Set()) {
   const mapped = freeList.map(mapFreeItem);
   const available = mapped.filter((item) => !excludeNames.has(normalizeName(item.name)));
-  const required = available.filter((item) => planFreeExerciseIds.has(item.id.slice('free-'.length)));
+  const required = available.filter((item) => {
+    const ref = item.id.slice('free-'.length);
+    return planFreeExerciseIds.has(ref) || READY_FREE_EXERCISE_IDS.has(ref);
+  });
   const requiredIds = new Set(required.map((item) => item.id));
   const browse = available
     .filter((item) => !requiredIds.has(item.id))

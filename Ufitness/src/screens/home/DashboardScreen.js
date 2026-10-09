@@ -42,7 +42,7 @@ import WeekPulse from '../../features/workout/components/weekpulse';
 import { queueWorkoutAction } from '../../features/workout/lib/pendingStart';
 import { listWorkouts, imageForWorkout } from '../../features/workout/data/readyWorkouts';
 import { StartCard, StartCardRow } from '../../components/StartCard';
-import { promptDueReminders, showNotificationsSheet } from '../../lib/reminders';
+import { promptDueReminders } from '../../lib/reminders';
 
 // Home / Dashboard
 // Sections (top → bottom):
@@ -306,6 +306,7 @@ export default function DashboardScreen({ navigation }) {
       focus: workout.focus,
       moves: moveCount,
       exerciseIds: workout.exerciseIds,
+      movesList: workout.moves || undefined,
       programId: workout.id,
       workoutId: workout.id,
       group: workout.group,
@@ -374,7 +375,7 @@ export default function DashboardScreen({ navigation }) {
               >
                 <Ionicons name="download-outline" size={22} color={fg} />
               </TouchableOpacity>
-              <TouchableOpacity activeOpacity={0.7} style={styles.notificationBtn} onPress={showNotificationsSheet}>
+              <TouchableOpacity activeOpacity={0.7} style={styles.notificationBtn} onPress={() => openNested(navigation, ['Profile', 'Notifications'])}>
                 <Ionicons name="notifications-outline" size={22} color={fg} />
               </TouchableOpacity>
             </View>
@@ -483,6 +484,25 @@ export default function DashboardScreen({ navigation }) {
             </PressScale>
           </Animated.View>
 
+          {/* AI Coach (Profile stack → AiCoach). Answers come from the ai-coach Edge Function. */}
+          <Animated.View entering={FadeInDown.delay(280).duration(520)}>
+            <PressScale
+              style={[styles.coachCard, glass]}
+              onPress={() => openNested(navigation, ['Profile', 'AiCoach'])}
+              accessibilityRole="button"
+              accessibilityLabel="Open AI Coach"
+            >
+              <View style={[styles.coachIcon, { backgroundColor: colors.accent }]}>
+                <Ionicons name="sparkles" size={18} color="#0A0A0A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.upcomingKicker, { color: colors.accent, marginBottom: 2 }]}>AI COACH</Text>
+                <Text style={[styles.coachTitle, { color: fg }]}>Ask about workouts, meals and your budget</Text>
+                <Text style={[styles.coachSub, { color: soft }]}>“Plan my week on R300” · “Workout for today”</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={soft} />
+            </PressScale>
+          </Animated.View>
           <Animated.View entering={FadeInDown.delay(310).duration(520)}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionLabel, { color: fg }]}>Quick start</Text>
@@ -816,6 +836,23 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.10)',
     marginBottom: 22,
   },
+  coachCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: radius.card,
+    padding: 14,
+    marginBottom: 14,
+  },
+  coachIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachTitle: { fontSize: 15, fontWeight: '700' },
+  coachSub: { fontSize: 12, marginTop: 3 },
   upcoming: {
     borderRadius: radius.card,
     padding: 14,

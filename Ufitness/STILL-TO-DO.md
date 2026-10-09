@@ -23,9 +23,9 @@ Create Account sends an 8-digit code through Supabase, using Gmail as the sender
 - Confirm email must stay on. The code is checked with `verifyOtp`, type `email`.
 - The code proves the student can open that inbox. It does not prove they are enrolled. There is no UJ enrolment API.
 
-## 3. Keep the student’s data when they change phones
+## 3. Keep the student-s data when they change phones
 
-Signed-in meals, community, reminders, eaten plates, and the workout plan now save to Supabase `user_docs` under that student’s id. This starts working after `supabase/schema.sql` is run once in the SQL editor. Until then the phone keeps a local copy and the cloud write is skipped.
+Signed-in meals, community, reminders, eaten plates, and the workout plan now save to Supabase `user_docs` under that student-s id. This starts working after `supabase/schema.sql` is run once in the SQL editor. Until then the phone keeps a local copy and the cloud write is skipped.
 
 ## 4. Features that are screens with no people in them
 
@@ -48,3 +48,9 @@ Home calories and active minutes are still only what this student logged. Those 
 1. Run `Ufitness/supabase/schema.sql` in the Supabase SQL editor so cloud save, buddies, and group chat have tables.
 2. Mail from a real domain, so the 8-digit code reaches UJ inboxes.
 3. Run the EAS preview build (the package name and `eas.json` are ready), so the phone shows UFitness instead of Expo Go.
+
+## React Compiler lint clean-up (after SDK 57)
+`eslint-config-expo` 57 turned on five React Compiler rules as errors (`react-hooks/refs`, `set-state-in-effect`, `immutability`, `purity`, `globals`). They flagged ~108 issues in code that was fine before. They are set to **warn** in `eslint.config.js` for now. Later: fix them file by file, then switch them back to `'error'`.
+
+## AI Coach - switch it on
+The screen and Edge Function are in the repo. Until `DEPLOY-AI-COACH.md` is done, the screen shows "AI Coach not set up yet". Steps (one at a time): free Gemini key at aistudio.google.com - Supabase CLI login/link (same pending access-token login as the LoyaltyHub proxy) - run `supabase/migrations/2026-10-08-ai-coach.sql` - `npx supabase secrets set GEMINI_API_KEY=...` - `npx supabase functions deploy ai-coach` - test from Home - AI Coach.

@@ -12,6 +12,7 @@ import SectionTitle from '../components/sectiontitle';
 import PrimaryButton from '../components/button';
 import BadgeStrip from '../../../components/BadgeStrip';
 import { syncAchievements } from '../../../lib/achievements';
+import { badgeSummary } from '../../../lib/badgeRules';
 
 function BarChart({ days }) {
   const max = Math.max(1, ...days.map(function (item) { return item.minutes || item.sessions; }));
@@ -104,7 +105,7 @@ export default function InsightsScreen({ navigation }) {
         </GlassCard>
       ) : null}
 
-      <BadgeStrip badges={badges} />
+      <BadgeStrip badges={badges} summary={badgeSummary(history)} />
 
       <GlassCard>
         <View className="flex-row items-center gap-4">

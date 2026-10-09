@@ -5,15 +5,17 @@ import WeekHeader from '../components/weekheader';
 import WeekStrip from '../components/weekstrip';
 import SectionTitle from '../components/sectiontitle';
 import WorkoutCard from '../components/workoutcard';
+import TodayWorkoutCard from '../components/todayworkoutcard';
 import InsightsRow from '../components/insightscard';
-import { GlassCard, GlassScreen } from '../components/glass';
+import { GlassScreen } from '../components/glass';
 import { useApp } from '../context/AppContext';
 import { getWeekDays, daysWithSessions } from '../data/week';
 import { FLOOR_PLAN } from '../data/floorPlan';
-import { formatMoveMeta, estimateMinutes, movesFromIds } from '../lib/session';
+import { estimateMinutes, movesFromIds } from '../lib/session';
 import { takeWorkoutAction } from '../lib/pendingStart';
 import { workoutsInCollection, imageForWorkout } from '../data/readyWorkouts';
 import { useActiveSession } from '../../../context/ActiveSessionContext';
+import { buildTodayPreview } from '../lib/todayPreview';
 
 // Workout tab home — today’s plan, resume pill, and quick starts.
 export default function HomeScreen() {
@@ -39,6 +41,8 @@ export default function HomeScreen() {
   const todayKey = week.find(function (item) { return item.isToday; });
   const [selectedKey, setSelectedKey] = useState(todayKey ? todayKey.key : undefined);
   const campusReady = workoutsInCollection('dorm').slice(0, 3);
+  const gymReady = workoutsInCollection('gym').slice(0, 3);
+  const todayPreview = buildTodayPreview({ todayPlan: todayPlan, getExercise: getExercise });
 
   function openPreStart(params) {
     navigation.navigate('PreStart', params);
@@ -98,6 +102,10 @@ export default function HomeScreen() {
         // From Profile → Downloads: open the downloaded workout in the normal Exercises screen.
         if (pending.openDownload) {
           const ref = String(pending.openDownload);
+          if (ref.startsWith('ready-')) {
+            navigation.navigate('PreStart', { workoutId: ref.slice('ready-'.length) });
+            return;
+          }
           const params = ref.startsWith('session-')
             ? { sessionId: ref.slice('session-'.length) }
             : { programId: ref.replace(/^program-/, '') };
@@ -166,43 +174,19 @@ export default function HomeScreen() {
         </>
       ) : null}
 
-      <SectionTitle>Today</SectionTitle>
-      {todayPlan.type === 'train' ? (
-        <>
-          <WorkoutCard
-            variant="featured"
-            eyebrow={
-              program
-                ? program.goal.name + ' · ' + program.splitName
-                : plan.name + ' · ~' + plan.minutes + ' min · ' + plan.equipment
-            }
-            title={todayPlan.session.name}
-            progressLabel={todayPlan.moves.length + ' moves · ~' + estimateMinutes(todayPlan.moves) + ' min'}
-            onStart={startWorkout}
-          />
-          <GlassCard className="mt-3">
-            <View className="gap-2">
-              {todayPlan.moves.map(function (move, index) {
-                const ex = getExercise(move.id);
-                return (
-                  <Text key={move.id + '-' + index} className="text-sm text-muted">
-                    {index + 1}. {(ex && ex.name) || move.id}
-                    {move.swapped ? ' (swapped)' : ''} · {formatMoveMeta(move)}
-                  </Text>
-                );
-              })}
-            </View>
-          </GlassCard>
-        </>
-      ) : (
-        <WorkoutCard
-          variant="compact"
-          eyebrow={todayPlan.type === 'done' ? 'Session logged' : 'Rest day'}
-          title={todayPlan.type === 'done' ? "You're done for today" : 'No extra work'}
-          progressLabel={statusSentence}
-          onPress={function () { navigation.navigate('Insights'); }}
-        />
-      )}
+      <SectionTitle>{"Today's workout"}</SectionTitle>
+      <TodayWorkoutCard
+        preview={todayPreview}
+        eyebrow={
+          todayPlan.type === 'train'
+            ? program
+              ? program.goal.name + ' · ' + program.splitName
+              : plan.name + ' · ' + plan.equipment
+            : statusSentence
+        }
+        onStart={startWorkout}
+        onRestPress={function () { navigation.navigate('Insights'); }}
+      />
 
       <SectionTitle>Campus ready</SectionTitle>
       <Text className="mb-2 text-[13px] leading-5 text-muted">
@@ -234,11 +218,42 @@ export default function HomeScreen() {
           </View>
         );
       })}
+      <SectionTitle>Gym split</SectionTitle>
+      <Text className="mb-2 text-[13px] leading-5 text-muted">
+        Hard barbell and machine sessions for the campus gym.
+      </Text>
+      {gymReady.map(function (workout) {
+        return (
+          <View key={workout.id} className="mb-3">
+            <WorkoutCard
+              variant="compact"
+              eyebrow={workout.minutes + ' min · ' + workout.level}
+              title={workout.name}
+              progressLabel={workout.focus + ' · ' + workout.exerciseIds.length + ' moves'}
+              onPress={function () {
+                openPreStart({
+                  title: workout.name,
+                  minutes: workout.minutes,
+                  level: workout.level,
+                  focus: workout.focus,
+                  moves: workout.exerciseIds.length,
+                  movesList: workout.moves,
+                  exerciseIds: workout.exerciseIds,
+                  programId: workout.id,
+                  workoutId: workout.id,
+                  group: workout.group,
+                  image: imageForWorkout(workout),
+                });
+              }}
+            />
+          </View>
+        );
+      })}
       <WorkoutCard
         variant="compact"
         eyebrow="Explore"
         title="More workouts"
-        progressLabel="Strength, cardio, and custom builder."
+        progressLabel="All gym splits, strength, cardio, and custom builder."
         onPress={function () { navigation.navigate('Workouts'); }}
       />
 

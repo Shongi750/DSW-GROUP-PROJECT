@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { Image, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { popularPrograms, getProgram } from '../data/programs';
@@ -16,6 +16,8 @@ import { useApp } from '../context/AppContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { loadChallengeFeed, saveClipOffline } from '../lib/clipStore';
 import { WORKOUT_SESSIONS, loadSavedSessions, rememberExercises } from '../lib/sessionApi';
+import { downloadReadyWorkout, readyRefId, readyWorkoutSnapshot, removeWorkoutDownload } from '../lib/workoutDownloads';
+import { useDownload } from '../../../lib/downloads/useDownload';
 import { getWeekDays, daysWithSessions } from '../data/week';
 import {
   WORKOUT_GROUPS,
@@ -32,6 +34,7 @@ const GROUP_ICONS = {
   cardio: 'walk',
   core: 'body',
   stretch: 'leaf',
+  gym: 'fitness',
 };
 
 function matchesQuery(program, query) {
@@ -68,9 +71,35 @@ function PopularTile({ workout, onPress }) {
   );
 }
 
+// Download / downloaded icon on a workout row (same downloads flow as PreStart).
+function RowDownload({ workout, getExercise }) {
+  const refId = readyRefId(workout.id);
+  const dl = useDownload('workout', refId);
+  if (dl.busy) return <ActivityIndicator size="small" color="#FF6A00" style={styles.rowDl} />;
+  const onPress = () => {
+    if (dl.downloaded) {
+      Alert.alert('Downloaded', workout.name + ' is saved for offline.', [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => dl.run(() => removeWorkoutDownload(refId)) },
+      ]);
+      return;
+    }
+    dl.run(async () => {
+      const exercises = (workout.exerciseIds || []).map((id) => getExercise(id)).filter(Boolean);
+      if (!exercises.length) throw new Error('Could not load this workout\'s exercises. Try again online.');
+      await downloadReadyWorkout(readyWorkoutSnapshot({ workout, exercises, image: imageForWorkout(workout) }));
+    });
+  };
+  return (
+    <Pressable onPress={onPress} hitSlop={10} style={styles.rowDl} accessibilityLabel={dl.downloaded ? 'Downloaded' : 'Download for offline'}>
+      <Ionicons name={dl.downloaded ? 'checkmark-circle' : 'download-outline'} size={22} color={dl.downloaded ? '#22C55E' : '#FF6A00'} />
+    </Pressable>
+  );
+}
+
 // Browse tab — search, filters, clips, and optional “More” section.
 export default function WorkoutScreen({ navigation }) {
-  const { recommendations, profile } = useApp();
+  const { recommendations, profile, getExercise } = useApp();
   const { colors } = useTheme();
   const [query, setQuery] = useState('');
   const [feed, setFeed] = useState({ date: '', today: [], saved: [] });
@@ -195,6 +224,7 @@ export default function WorkoutScreen({ navigation }) {
       focus: workout.focus,
       moves: (workout.exerciseIds && workout.exerciseIds.length) || 0,
       exerciseIds: workout.exerciseIds,
+      movesList: workout.moves || undefined,
       programId: workout.id,
       workoutId: workout.id,
       group: workout.group,
@@ -310,6 +340,7 @@ export default function WorkoutScreen({ navigation }) {
             onPress={function () {
               startReadyWorkout(workout);
             }}
+            right={<RowDownload workout={workout} getExercise={getExercise} />}
           />
         );
       })}
@@ -496,6 +527,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  rowDl: {
+    marginLeft: 10,
+    width: 32,
+    alignItems: 'center',
   },
   chip: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,11 @@ import { imageForWorkout } from '../data/readyWorkouts';
 import { useApp } from '../context/AppContext';
 import { getPlatform, playlistForWorkout } from '../data/music';
 import { openSpotifyPlaylist } from '../lib/music';
+import { downloadReadyWorkout, loadWorkoutDownload, readyRefId, readyWorkoutSnapshot } from '../lib/workoutDownloads';
+import DownloadButton from '../../../components/DownloadButton';
+import { useDownload } from '../../../lib/downloads/useDownload';
+import { useLocalMedia } from '../../../lib/downloads/downloadsStore';
+import { previewMoves } from '../lib/todayPreview';
 
 function MetaChip({ icon, label, colors }) {
   return (
@@ -22,15 +27,46 @@ function MetaChip({ icon, label, colors }) {
 // Last screen before the Player — summary + "open music?" toggle
 export default function PreStartScreen({ navigation, route }) {
   const { colors } = useTheme();
-  const { profile, setMusicAutoOpen } = useApp();
+  const { profile, setMusicAutoOpen, getExercise } = useApp();
   const p = route.params || {};
-  const title = p.title || 'Workout';
-  const minutes = p.minutes || 15;
-  const level = p.level || 'Train';
-  const focus = p.focus || 'Full body';
-  const moves = p.moves || p.exerciseIds?.length || 0;
-  const image = p.image || (p.workoutId ? imageForWorkout({ id: p.workoutId, group: p.group }) : null);
-  const exerciseIds = p.exerciseIds || [];
+  const workoutId = p.workoutId || p.programId || '';
+  const refId = readyRefId(workoutId);
+  const dl = useDownload('workout', refId);
+  const [saved, setSaved] = useState(null); // downloaded copy (used when opened from Downloads / offline)
+  useEffect(() => {
+    if (!refId) return undefined;
+    let alive = true;
+    loadWorkoutDownload(refId).then((entry) => alive && setSaved(entry?.data || null));
+    return () => {
+      alive = false;
+    };
+  }, [refId, dl.downloaded]);
+  const title = p.title || saved?.name || 'Workout';
+  const minutes = p.minutes || saved?.minutes || 15;
+  const level = p.level || saved?.level || 'Train';
+  const focus = p.focus || saved?.focus || 'Full body';
+  const exerciseIds = p.exerciseIds?.length ? p.exerciseIds : saved?.exerciseIds || [];
+  const moves = p.moves || exerciseIds.length || 0;
+  const remoteImage = p.image || saved?.image || (p.workoutId ? imageForWorkout({ id: p.workoutId, group: p.group }) : null);
+  const image = useLocalMedia(remoteImage); // saved file once downloaded
+  // Show what is coming before Start (first 6 moves, with sets × reps from the workout itself).
+  const previewSource = p.movesList?.length ? p.movesList : exerciseIds;
+  const preview = previewMoves(previewSource, getExercise, 6);
+  const moreMoves = Math.max(0, previewSource.length - preview.length);
+
+  // Download for offline: plan, exercises (sets/reps/how-to) + cover and exercise photos/GIFs.
+  const download = () =>
+    dl.run(async () => {
+      const exercises = exerciseIds.map((id) => getExercise(id)).filter(Boolean);
+      if (!exercises.length) throw new Error('Could not load this workout\'s exercises. Try again online.');
+      await downloadReadyWorkout(
+        readyWorkoutSnapshot({
+          workout: { id: workoutId, name: title, minutes, level, focus, group: p.group, movesList: p.movesList },
+          exercises,
+          image: remoteImage,
+        })
+      );
+    });
 
   const platform = getPlatform(profile.musicPlatform || 'spotify');
   const hasPlaylist = Boolean(profile.musicLinks?.[platform.id]);
@@ -81,6 +117,28 @@ export default function PreStartScreen({ navigation, route }) {
         <MetaChip icon="body-outline" label={focus} colors={colors} />
         <MetaChip icon="list-outline" label={`${moves} moves`} colors={colors} />
       </View>
+
+      {preview.length ? (
+        <View style={[styles.movesCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.kicker, { color: colors.accentBright, marginBottom: 10 }]}>IN THIS WORKOUT</Text>
+          {preview.map((item) => (
+            <View key={item.key} style={styles.moveRow}>
+              <Text style={[styles.moveNum, { color: colors.accent }]}>{item.number}</Text>
+              <Text style={[styles.moveName, { color: colors.text }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={[styles.moveMeta, { color: colors.muted }]}>{item.meta}</Text>
+            </View>
+          ))}
+          {moreMoves ? (
+            <Text style={[styles.moveMeta, { color: colors.muted, marginTop: 4 }]}>+{moreMoves} more</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {refId && exerciseIds.length ? (
+        <DownloadButton dl={dl} onDownload={download} style={{ marginTop: 16 }} />
+      ) : null}
 
       <Text style={[styles.blurb, { color: colors.muted }]}>
         No setup. Follow each move on screen. Swap or skip anytime.
@@ -191,6 +249,33 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  movesCard: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  moveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    gap: 10,
+  },
+  moveNum: {
+    width: 18,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  moveName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  moveMeta: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   blurb: {
     marginTop: spacing.card,

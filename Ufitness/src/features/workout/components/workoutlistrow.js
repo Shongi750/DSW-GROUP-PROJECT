@@ -19,7 +19,7 @@ function levelTone(level) {
   return { label: level || 'Train', bg: 'rgba(255,106,0,0.18)', color: '#FF6A00' };
 }
 
-export default function WorkoutListRow({ image: remoteImage, title, meta, level, onPress }) {
+export default function WorkoutListRow({ image: remoteImage, title, meta, level, onPress, right = null }) {
   const image = useLocalMedia(remoteImage); // saved file when the workout is downloaded
   const { colors } = useTheme();
   const tone = levelTone(level);
@@ -50,6 +50,7 @@ export default function WorkoutListRow({ image: remoteImage, title, meta, level,
       <View style={[styles.badge, { backgroundColor: tone.bg }]}>
         <Text style={[styles.badgeText, { color: tone.color }]}>{tone.label}</Text>
       </View>
+      {right}
     </TouchableOpacity>
   );
 }

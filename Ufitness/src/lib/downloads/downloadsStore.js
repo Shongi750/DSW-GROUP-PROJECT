@@ -121,7 +121,9 @@ async function cacheMediaFile(url, ownerId) {
     registry = addOwner(registry, url, file, ownerId);
     return file;
   }
-  const result = await FileSystem.downloadAsync(url, target);
+  const result = await FileSystem.downloadAsync(url, target, {
+    headers: { 'User-Agent': 'UFitness/1.0 (https://ufitness.app; ufitness-app)' },
+  });
   if (result.status && result.status >= 400) {
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     return null;

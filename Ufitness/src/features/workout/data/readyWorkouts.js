@@ -220,6 +220,132 @@ const READY_WORKOUTS = [
   },
 ];
 
+// Gym split (idea from Faheem's branch, rebuilt on UFitness ids). Every "free-" id below
+// was checked against the open free-exercise-db library the catalog loads, so photos and
+// how-to steps come from there. Moves carry their own sets / reps / rest because these are
+// heavier sessions than the bodyweight defaults.
+function sets(id, setCount, reps, rest) {
+  return { id: id, mode: 'sets', sets: setCount, reps: reps, rest: rest };
+}
+
+function timed(id, duration, rest) {
+  return { id: id, mode: 'timed', duration: duration, rest: rest, sets: 1 };
+}
+
+function gymWorkout(item) {
+  return {
+    ...item,
+    group: 'gym',
+    equipment: item.equipment || 'Gym',
+    exerciseIds: item.moves.map(function (move) { return move.id; }),
+  };
+}
+
+const GYM_WORKOUTS = [
+  gymWorkout({
+    id: 'gym-upper-power',
+    name: 'Upper Power',
+    minutes: 50,
+    level: 'Hard',
+    focus: 'Chest, back and shoulders',
+    moves: [
+      sets('free-Barbell_Bench_Press_-_Medium_Grip', 4, 6, 120),
+      sets('free-Bent_Over_Barbell_Row', 4, 6, 120),
+      sets('free-Barbell_Shoulder_Press', 3, 8, 90),
+      sets('free-Pullups', 3, 8, 90),
+      sets('free-Dips_-_Triceps_Version', 3, 10, 60),
+      sets('free-Barbell_Curl', 3, 10, 60),
+    ],
+  }),
+  gymWorkout({
+    id: 'gym-lower-quads',
+    name: 'Lower / Quads',
+    minutes: 50,
+    level: 'Hard',
+    focus: 'Quads and calves',
+    moves: [
+      sets('free-Barbell_Squat', 4, 6, 150),
+      sets('free-Leg_Press', 3, 10, 90),
+      sets('free-Dumbbell_Lunges', 3, 10, 75),
+      sets('free-Leg_Extensions', 3, 12, 60),
+      sets('free-Standing_Calf_Raises', 4, 12, 45),
+      sets('free-Hanging_Leg_Raise', 3, 10, 45),
+    ],
+  }),
+  gymWorkout({
+    id: 'gym-back',
+    name: 'Back Builder',
+    minutes: 45,
+    level: 'Hard',
+    focus: 'Back and rear delts',
+    moves: [
+      sets('free-Barbell_Deadlift', 4, 5, 150),
+      sets('free-Wide-Grip_Lat_Pulldown', 3, 10, 75),
+      sets('free-Seated_Cable_Rows', 3, 10, 75),
+      sets('free-T-Bar_Row_with_Handle', 3, 8, 90),
+      sets('free-Face_Pull', 3, 15, 45),
+      sets('free-Hyperextensions_Back_Extensions', 3, 12, 45),
+    ],
+  }),
+  gymWorkout({
+    id: 'gym-glutes-hams',
+    name: 'Glutes / Hams',
+    minutes: 45,
+    level: 'Hard',
+    focus: 'Glutes and hamstrings',
+    moves: [
+      sets('free-Barbell_Hip_Thrust', 4, 8, 120),
+      sets('free-Romanian_Deadlift', 4, 8, 120),
+      sets('free-Lying_Leg_Curls', 3, 12, 60),
+      sets('free-Dumbbell_Step_Ups', 3, 10, 60),
+      sets('free-Glute_Kickback', 3, 12, 45),
+      sets('free-Single_Leg_Glute_Bridge', 2, 12, 45),
+    ],
+  }),
+  gymWorkout({
+    id: 'gym-full-circuit',
+    name: 'Full-Body Circuit',
+    minutes: 35,
+    level: 'Hard',
+    focus: 'Full body',
+    equipment: 'Dumbbells, kettlebell, rower',
+    moves: [
+      sets('free-Goblet_Squat', 3, 12, 30),
+      sets('free-Dumbbell_Bench_Press', 3, 10, 30),
+      sets('free-One-Arm_Dumbbell_Row', 3, 10, 30),
+      sets('free-Dumbbell_Rear_Lunge', 3, 10, 30),
+      sets('free-Dumbbell_Shoulder_Press', 3, 10, 30),
+      timed('mountain-climber', 40, 20),
+      timed('free-Rowing_Stationary', 120, 60),
+    ],
+  }),
+  gymWorkout({
+    id: 'gym-recovery',
+    name: 'Gym Recovery',
+    minutes: 20,
+    level: 'Beginner',
+    focus: 'Mobility',
+    equipment: 'Rower or bike, mat',
+    moves: [
+      timed('free-Rowing_Stationary', 300, 30),
+      timed('cat-cow', 45, 10),
+      timed('world-greatest', 60, 10),
+      timed('hip-opener', 45, 10),
+      timed('hamstring-fold', 40, 10),
+      timed('glute-stretch', 40, 0),
+    ],
+  }),
+];
+
+READY_WORKOUTS.push(...GYM_WORKOUTS);
+
+// Open-library ids the ready workouts need. The catalog loader always includes these.
+const READY_FREE_EXERCISE_IDS = new Set(
+  READY_WORKOUTS.flatMap(function (workout) { return workout.exerciseIds; })
+    .filter(function (id) { return id.indexOf('free-') === 0; })
+    .map(function (id) { return id.slice('free-'.length); })
+);
+
 const GROUPS = [
   { id: 'all', label: 'All' },
   { id: 'quick', label: 'Quick' },
@@ -227,6 +353,7 @@ const GROUPS = [
   { id: 'cardio', label: 'Cardio' },
   { id: 'core', label: 'Core' },
   { id: 'stretch', label: 'Stretch' },
+  { id: 'gym', label: 'Gym' },
 ];
 
 // Nike-style collections: short picks for campus life.
@@ -250,7 +377,7 @@ const COLLECTIONS = [
     label: 'Gym day',
     blurb: 'Push harder',
     image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop&q=80',
-    workoutIds: ['full-body-burn', 'leg-day', 'upper-body', 'hiit-blast'],
+    workoutIds: ['gym-upper-power', 'gym-lower-quads', 'gym-back', 'gym-glutes-hams', 'gym-full-circuit', 'gym-recovery'],
   },
 ];
 
@@ -260,6 +387,7 @@ const WORKOUT_IMAGES = {
   cardio: 'https://images.unsplash.com/photo-1434682881908-b43d0467b798?w=800&auto=format&fit=crop&q=80',
   core: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&auto=format&fit=crop&q=80',
   stretch: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80',
+  gym: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop&q=80',
 };
 
 function imageForWorkout(workout) {
@@ -306,6 +434,8 @@ function listWorkouts(query, group) {
 
 export {
   READY_WORKOUTS,
+  GYM_WORKOUTS,
+  READY_FREE_EXERCISE_IDS,
   GROUPS as WORKOUT_GROUPS,
   COLLECTIONS,
   listWorkouts,

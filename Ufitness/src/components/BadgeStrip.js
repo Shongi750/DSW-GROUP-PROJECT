@@ -5,7 +5,7 @@ import { useTheme, radius, spacing, type } from '../context/ThemeContext';
 import { PHOTO_GLASS } from './PhotoShell';
 
 /** Compact badge strip for Insights / Profile / Finish. */
-export default function BadgeStrip({ badges = [], title = 'Milestones' }) {
+export default function BadgeStrip({ badges = [], title = 'Milestones', summary = '' }) {
   const { colors } = useTheme();
   if (!badges.length) return null;
   const earned = badges.filter((b) => b.earned || b.unlockedAt);
@@ -16,6 +16,7 @@ export default function BadgeStrip({ badges = [], title = 'Milestones' }) {
         {earned.length
           ? `${earned.length} of ${badges.length} unlocked`
           : 'Finish sessions to unlock milestones.'}
+        {summary ? ` · ${summary}` : ''}
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {badges.map((badge) => {

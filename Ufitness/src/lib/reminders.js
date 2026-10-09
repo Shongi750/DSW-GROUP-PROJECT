@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import {
   biometricLabel,
   canUseBiometrics,
@@ -9,39 +8,26 @@ import {
   isUnlockEnabled,
 } from './biometrics';
 import { currentUid, fetchCloudDoc, saveCloudDoc } from './cloudCache';
+import { getLocalNotifications } from './notifications/localNotifications';
+import {
+  allReminderIds,
+  buildSchedule,
+  CHANNEL_ID,
+  normalizeReminders,
+  reminderSummary,
+  TRIGGER,
+} from './notifications/reminderSchedule';
+
+// Reminders = local notifications scheduled on this phone (works in Expo Go and the APK).
+// Settings screen: Profile → Notifications (src/screens/profile/NotificationsScreen.js).
+// Rules for what gets scheduled: ./notifications/reminderSchedule.js. Push: NOTIFICATIONS.md.
 
 const KEY = 'ufitness.reminders.v1';
-const CHANNEL = 'reminders';
 
-const empty = {
-  groceryDay: false,
-  gymCheckIn: false,
-  lastGrocery: '',
-  lastGym: '',
-};
+export { reminderSummary };
 
-const GROCERY = [
-  { id: 'grocery-saturday', weekday: 7 },
-  { id: 'grocery-sunday', weekday: 1 },
-];
-
-const GYM = [
-  { id: 'gym-monday', weekday: 2 },
-  { id: 'gym-tuesday', weekday: 3 },
-  { id: 'gym-wednesday', weekday: 4 },
-  { id: 'gym-thursday', weekday: 5 },
-  { id: 'gym-friday', weekday: 6 },
-];
-
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
-    }),
-  });
+export function notificationsAvailable() {
+  return Boolean(getLocalNotifications());
 }
 
 function todayKey(date = new Date()) {
@@ -49,158 +35,192 @@ function todayKey(date = new Date()) {
 }
 
 async function ensureChannel() {
-  if (Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(CHANNEL, {
+  const N = getLocalNotifications();
+  if (!N || Platform.OS !== 'android') return;
+  await N.setNotificationChannelAsync(CHANNEL_ID, {
     name: 'Reminders',
-    importance: Notifications.AndroidImportance.DEFAULT,
+    description: 'Workout, meal and grocery reminders',
+    importance: N.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 150, 250],
+    lightColor: '#FF6A00',
   });
 }
 
-async function ensurePermission() {
-  if (Platform.OS === 'web') return false;
-  await ensureChannel();
-  const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
-  const next = await Notifications.requestPermissionsAsync();
-  return next.granted;
-}
-
-async function cancelIds(items) {
-  await Promise.all(
-    items.map((item) => Notifications.cancelScheduledNotificationAsync(item.id).catch(() => {}))
-  );
-}
-
-async function scheduleWeekly(items, title, body) {
-  for (const item of items) {
-    await Notifications.scheduleNotificationAsync({
-      identifier: item.id,
-      content: { title, body },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-        weekday: item.weekday,
-        hour: 9,
-        minute: 0,
-        channelId: CHANNEL,
-      },
-    });
+/** 'granted' | 'denied' | 'undetermined' | 'unavailable' (no permission prompt). */
+export async function notificationPermission() {
+  const N = getLocalNotifications();
+  if (!N) return 'unavailable';
+  try {
+    const current = await N.getPermissionsAsync();
+    if (current.granted) return 'granted';
+    return current.canAskAgain === false ? 'denied' : current.status || 'undetermined';
+  } catch {
+    return 'unavailable';
   }
 }
 
-export async function syncScheduledReminders(state) {
-  if (Platform.OS === 'web') return;
-  if (state.groceryDay) {
-    await scheduleWeekly(
-      GROCERY,
-      'Grocery day',
-      'Shop for this week’s plates. Open Meals and tap Grocery list.'
-    );
-  } else {
-    await cancelIds(GROCERY);
-  }
-  if (state.gymCheckIn) {
-    await scheduleWeekly(
-      GYM,
-      'Gym check-in',
-      'Log today’s session in Workout, or report how busy campus gym is in Community.'
-    );
-  } else {
-    await cancelIds(GYM);
-  }
-}
-
-export async function scheduleTestReminder() {
-  const allowed = await ensurePermission();
-  if (!allowed) {
-    Alert.alert('Notifications are off', 'Allow notifications for UFitness to see a reminder.');
+/** Ask for permission (Android 13+ shows the system prompt once). */
+export async function ensurePermission() {
+  const N = getLocalNotifications();
+  if (!N) return false;
+  try {
+    // Android 13+: a channel must exist before the permission prompt shows.
+    await ensureChannel();
+    const current = await N.getPermissionsAsync();
+    if (current.granted) return true;
+    const next = await N.requestPermissionsAsync();
+    return Boolean(next.granted);
+  } catch {
     return false;
   }
-  await Notifications.scheduleNotificationAsync({
-    identifier: 'reminder-test',
-    content: {
-      title: 'UFitness reminder',
-      body: 'Grocery day and gym check-in use this same alert.',
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 8,
-      channelId: CHANNEL,
-    },
-  });
-  return true;
+}
+
+// Runs one sync at a time (quick taps on the time buttons used to overlap).
+let syncChain = Promise.resolve(0);
+
+/** Cancel every UFitness reminder, then schedule exactly what the settings say. */
+export function syncScheduledReminders(state) {
+  const run = syncChain.then(() => syncNow(state), () => syncNow(state));
+  syncChain = run.catch(() => 0);
+  return run;
+}
+
+async function syncNow(state) {
+  const N = getLocalNotifications();
+  if (!N) return 0;
+  await Promise.all(allReminderIds().map((id) => N.cancelScheduledNotificationAsync(id).catch(() => {})));
+  const items = buildSchedule(state);
+  if (!items.length) return 0;
+  const perm = await N.getPermissionsAsync().catch(() => ({ granted: false }));
+  if (!perm.granted) return 0;
+  await ensureChannel().catch(() => {});
+  let scheduled = 0;
+  for (const item of items) {
+    try {
+      await N.scheduleNotificationAsync(item);
+      scheduled += 1;
+    } catch (error) {
+      if (__DEV__) console.warn('[reminders] could not schedule', item.identifier, error?.message);
+    }
+  }
+  return scheduled;
+}
+
+/** How many reminders the phone has queued (for the settings screen). */
+export async function scheduledReminderCount() {
+  const N = getLocalNotifications();
+  if (!N) return 0;
+  try {
+    const ours = new Set(allReminderIds());
+    const all = await N.getAllScheduledNotificationsAsync();
+    return (all || []).filter((item) => ours.has(item?.identifier)).length;
+  } catch {
+    return 0;
+  }
+}
+
+export async function scheduleTestReminder(seconds = 5) {
+  const N = getLocalNotifications();
+  if (!N) {
+    Alert.alert('Not available here', 'This phone can’t show UFitness notifications from this app.');
+    return false;
+  }
+  const allowed = await ensurePermission();
+  if (!allowed) {
+    Alert.alert('Notifications are off', 'Allow notifications for UFitness (or Expo Go) in your phone settings, then try again.');
+    return false;
+  }
+  try {
+    await N.scheduleNotificationAsync({
+      identifier: 'reminder-test',
+      content: {
+        title: 'UFitness reminder',
+        body: 'Reminders work on this phone. Workout and meal reminders look like this.',
+        data: { screen: 'Profile' },
+      },
+      trigger: { type: TRIGGER.TIME_INTERVAL, seconds, channelId: CHANNEL_ID },
+    });
+    return true;
+  } catch (error) {
+    Alert.alert('Could not schedule', error?.message || 'Try again.');
+    return false;
+  }
 }
 
 export async function loadReminders() {
   try {
     const raw = await AsyncStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? { ...empty, ...parsed } : { ...empty };
-    }
+    if (raw) return normalizeReminders(JSON.parse(raw));
     const uid = currentUid();
     if (uid) {
       const remote = await fetchCloudDoc('reminders', uid);
       if (remote && typeof remote === 'object') {
-        const next = { ...empty, groceryDay: remote.groceryDay, gymCheckIn: remote.gymCheckIn, lastGrocery: remote.lastGrocery, lastGym: remote.lastGym };
+        const next = normalizeReminders(remote);
         await AsyncStorage.setItem(KEY, JSON.stringify(next));
         return next;
       }
     }
-    return { ...empty };
   } catch {
-    return { ...empty };
+    /* bad JSON / storage error: fall through to defaults */
   }
+  return normalizeReminders(null);
 }
 
 export async function saveReminders(next) {
+  const clean = normalizeReminders(next);
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(next));
+    await AsyncStorage.setItem(KEY, JSON.stringify(clean));
     const uid = currentUid();
-    if (uid) saveCloudDoc('reminders', uid, next);
+    if (uid) saveCloudDoc('reminders', uid, clean);
   } catch {
     /* quota / private mode */
   }
+  return clean;
+}
+
+/**
+ * Save new settings and reschedule. Turning something on asks for permission first;
+ * if the student says no, nothing is turned on.
+ * Returns { state, ok, scheduled }.
+ */
+export async function updateReminders(next, { turningOn = false } = {}) {
+  if (turningOn) {
+    if (!getLocalNotifications()) {
+      Alert.alert('Not available here', 'Reminders need the UFitness app (or Expo Go) on a phone.');
+      return { state: await loadReminders(), ok: false, scheduled: 0 };
+    }
+    const allowed = await ensurePermission();
+    if (!allowed) {
+      Alert.alert('Notifications are off', 'Allow notifications for UFitness (or Expo Go) in your phone settings, then turn this on again.');
+      return { state: await loadReminders(), ok: false, scheduled: 0 };
+    }
+  }
+  const state = await saveReminders(next);
+  const scheduled = await syncScheduledReminders(state).catch(() => 0);
+  return { state, ok: true, scheduled };
 }
 
 export async function toggleReminder(field) {
   const current = await loadReminders();
   const turningOn = !current[field];
-  if (turningOn) {
-    const allowed = await ensurePermission();
-    if (!allowed) {
-      Alert.alert(
-        'Notifications are off',
-        'Allow notifications for UFitness, then turn this reminder on again.'
-      );
-      return current;
-    }
-  }
-  const next = { ...current, [field]: turningOn };
-  await saveReminders(next);
-  await syncScheduledReminders(next);
-  return next;
+  const { state } = await updateReminders({ ...current, [field]: turningOn }, { turningOn });
+  return state;
 }
 
+/** Fallback when there is no navigation (old Alert sheet). Prefer Profile → Notifications. */
 export function showNotificationsSheet() {
   loadReminders().then((state) => {
-    Alert.alert(
-      'Notifications',
-      `Reminders on this phone.\n\nGrocery day: ${state.groceryDay ? 'on' : 'off'} (Sat and Sun, 9:00)\nGym check-in: ${state.gymCheckIn ? 'on' : 'off'} (weekdays, 9:00)`,
-      [
-        {
-          text: state.groceryDay ? 'Turn off grocery day' : 'Remind grocery day',
-          onPress: () => toggleReminder('groceryDay'),
-        },
-        {
-          text: state.gymCheckIn ? 'Turn off gym check-in' : 'Remind gym check-in',
-          onPress: () => toggleReminder('gymCheckIn'),
-        },
-        {
-          text: 'Try one in 8 seconds',
-          onPress: () => scheduleTestReminder(),
-        },
-      ]
-    );
+    Alert.alert('Notifications', `Reminders on this phone.\n\n${reminderSummary(state)}`, [
+      {
+        text: state.groceryDay ? 'Turn off grocery day' : 'Remind grocery day',
+        onPress: () => toggleReminder('groceryDay'),
+      },
+      {
+        text: state.gymCheckIn ? 'Turn off gym check-in' : 'Remind gym check-in',
+        onPress: () => toggleReminder('gymCheckIn'),
+      },
+      { text: 'Try one in 5 seconds', onPress: () => scheduleTestReminder() },
+    ]);
   });
 }
 
@@ -229,9 +249,7 @@ export function showPrivacySheet() {
 
 export async function promptDueReminders() {
   const state = await loadReminders();
-  if (Platform.OS !== 'web') {
-    syncScheduledReminders(state).catch(() => {});
-  }
+  syncScheduledReminders(state).catch(() => {});
   const today = todayKey();
   const weekday = new Date().getDay();
   const groceryDue = state.groceryDay && (weekday === 6 || weekday === 0) && state.lastGrocery !== today;

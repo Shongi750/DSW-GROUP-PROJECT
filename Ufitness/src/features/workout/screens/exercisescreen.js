@@ -217,6 +217,10 @@ export default function ExercisesScreen({ navigation, route }) {
         </ScrollView>
       ) : null}
 
+      {(session || program) && list.length ? (
+        <DownloadButton dl={{ ...dl, remove: removeThis }} onDownload={downloadThis} style={{ marginBottom: 12 }} />
+      ) : null}
+
       {busy ? <ActivityIndicator color="#FF6A00" className="mb-3" /> : null}
 
       {list.map((exercise) => {
@@ -237,9 +241,6 @@ export default function ExercisesScreen({ navigation, route }) {
       })}
 
       <View className="mt-3 gap-3">
-        {(session || program) && list.length ? (
-          <DownloadButton dl={{ ...dl, remove: removeThis }} onDownload={downloadThis} />
-        ) : null}
         <OrangeStartBar
           title={session || program ? 'Start course' : 'Start first exercise'}
           onPress={startAll}

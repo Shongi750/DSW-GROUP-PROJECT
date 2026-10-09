@@ -1,47 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { sessionStreak } from '../features/workout/data/progress';
+import { BADGE_DEFS, evaluateBadges } from './badgeRules';
 import { currentUid, fetchCloudDoc, saveCloudDoc } from './cloudCache';
 
 const KEY = 'ufitness.achievements.v1';
 
-/** FR-45 — factual milestones only (no fake body metrics). */
-export const BADGE_DEFS = [
-  {
-    id: 'first-workout',
-    title: 'First workout',
-    blurb: 'You logged your first session.',
-    icon: 'trophy-outline',
-    test: ({ sessions }) => sessions >= 1,
-  },
-  {
-    id: 'streak-7',
-    title: '7-day streak',
-    blurb: 'Trained across seven consecutive days.',
-    icon: 'flame-outline',
-    test: ({ streak }) => streak >= 7,
-  },
-  {
-    id: 'workouts-10',
-    title: '10 workouts',
-    blurb: 'Ten sessions on the books.',
-    icon: 'barbell-outline',
-    test: ({ sessions }) => sessions >= 10,
-  },
-  {
-    id: 'challenge-30',
-    title: '30-day challenge',
-    blurb: 'Thirty sessions completed — consistency win.',
-    icon: 'ribbon-outline',
-    test: ({ sessions }) => sessions >= 30,
-  },
-  {
-    id: 'week-complete',
-    title: 'Week locked in',
-    blurb: 'Hit your weekly session target once.',
-    icon: 'checkmark-circle-outline',
-    test: ({ weekDone, weekTotal }) => weekTotal > 0 && weekDone >= weekTotal,
-  },
-];
+export { BADGE_DEFS, evaluateBadges };
 
 async function readLocal() {
   try {
@@ -69,16 +32,6 @@ export async function loadAchievements() {
     }
   }
   return readLocal();
-}
-
-export function evaluateBadges({ history = [], weekDone = 0, weekTotal = 4 } = {}) {
-  const sessions = history.length;
-  const streak = sessionStreak(history);
-  const ctx = { sessions, streak, weekDone, weekTotal };
-  return BADGE_DEFS.map((def) => ({
-    ...def,
-    earned: Boolean(def.test(ctx)),
-  }));
 }
 
 /** Unlock newly earned badges; returns list that just unlocked. */

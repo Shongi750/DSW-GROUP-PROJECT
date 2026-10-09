@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { IMAGE_HEADERS } from './SafeImage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
@@ -44,7 +45,7 @@ export function StartCard({
         ]}
       >
         {image ? (
-          <Image source={{ uri: image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <Image source={{ uri: image, headers: IMAGE_HEADERS }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />
         )}
@@ -97,7 +98,7 @@ export function MovePlayRow({ image, title, meta, onPress, onPlay, done }) {
       style={[styles.moveRow, { backgroundColor: colors.card }]}
     >
       {image ? (
-        <Image source={{ uri: image }} style={styles.moveThumb} />
+        <Image source={{ uri: image, headers: IMAGE_HEADERS }} style={styles.moveThumb} />
       ) : (
         <View style={[styles.moveThumb, { backgroundColor: 'rgba(255,106,0,0.16)', alignItems: 'center', justifyContent: 'center' }]}>
           <Ionicons name="barbell" size={20} color={colors.accent} />

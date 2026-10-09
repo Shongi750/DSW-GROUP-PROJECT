@@ -3,6 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DashboardScreen from '../screens/home/DashboardScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
@@ -10,7 +11,6 @@ import FitnessGoalScreen from '../screens/onboarding/FitnessGoalScreen';
 import DietPreferencesScreen from '../screens/profile/DietPreferencesScreen';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
-import { showNotificationsSheet } from '../lib/reminders';
 import { nestedStackProps, openNested, openTab } from './nav';
 import { DEFAULT_AVATAR } from '../data/profileAvatars';
 import { hapticSelection } from '../lib/haptics';
@@ -57,7 +57,7 @@ function ProfileHome({ navigation }) {
       onCourseSelection={openSetup}
       onFitnessGoals={openSetup}
       onEatAllergies={() => navigation.navigate('DietPreferences')}
-      onNotifications={showNotificationsSheet}
+      onNotifications={() => navigation.navigate('Notifications')}
       onPrivacySecurity={() => navigation.navigate('PrivacySecurity')}
       onDownloads={() => navigation.navigate('Downloads')}
       onLogout={logout}
@@ -94,9 +94,19 @@ function ProfileTab() {
         options={{ headerShown: true, title: 'Privacy & security' }}
       />
       <ProfileStackNav.Screen
+        name="Notifications"
+        getComponent={() => require('../screens/profile/NotificationsScreen').default}
+        options={{ headerShown: true, title: 'Notifications' }}
+      />
+      <ProfileStackNav.Screen
         name="Downloads"
         getComponent={() => require('../screens/profile/DownloadsScreen').default}
         options={{ headerShown: true, title: 'Downloads' }}
+      />
+      <ProfileStackNav.Screen
+        name="AiCoach"
+        getComponent={() => require('../features/coach/screens/AiCoachScreen').default}
+        options={{ headerShown: true, title: 'AI Coach' }}
       />
       <ProfileStackNav.Screen
         name="BlockedUsers"
@@ -166,8 +176,15 @@ function RaisedWorkoutButton({ onPress, accessibilityState, testID, style }) {
   );
 }
 
+// Tab bar row height without the phone's system area. The real bar is this + the bottom
+// safe-area inset (Android nav buttons / gesture bar, iPhone home indicator).
+const TAB_BAR_CONTENT_HEIGHT = 66;
+
 export default function MainTabs() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Keep a little breathing room on phones with no bottom inset at all.
+  const bottomInset = Math.max(insets.bottom, 8);
   return (
     <Tab.Navigator
       // Count which tabs are used (one row per tab per day) for the admin dashboard
@@ -190,9 +207,11 @@ export default function MainTabs() {
           letterSpacing: 0.4,
           marginTop: 2,
         },
+        // Android: hide the bar while typing so the keyboard + input aren't squashed.
+        tabBarHideOnKeyboard: Platform.OS === 'android',
         tabBarStyle: {
-          height: 78,
-          paddingBottom: 12,
+          height: TAB_BAR_CONTENT_HEIGHT + bottomInset,
+          paddingBottom: bottomInset + 4,
           paddingTop: 8,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: 'rgba(255,255,255,0.14)',

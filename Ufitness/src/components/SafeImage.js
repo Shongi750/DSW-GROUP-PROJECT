@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Image } from 'react-native';
 
+// Wikimedia (meal photos) returns 403 to Android's default okhttp User-Agent, so every
+// meal fell back to FOOD_FALLBACK (one picture). Send an identifying UA with every image.
+export const IMAGE_HEADERS = { 'User-Agent': 'UFitness/1.0 (https://ufitness.app; ufitness-app)' };
+
 export const FOOD_FALLBACK =
   'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80';
 
@@ -14,7 +18,7 @@ export default function SafeImage({ uri, fallback = FOOD_FALLBACK, style, resize
   return (
     <Image
       {...rest}
-      source={{ uri: src || FOOD_FALLBACK }}
+      source={{ uri: src || FOOD_FALLBACK, headers: /^https?:/i.test(src || '') ? IMAGE_HEADERS : undefined }}
       style={style}
       resizeMode={resizeMode}
       onError={() => {

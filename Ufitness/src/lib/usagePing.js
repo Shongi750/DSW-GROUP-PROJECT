@@ -14,6 +14,7 @@ export const FEATURE_EVENTS = {
   Workout: 'workout',
   Community: 'community',
   Mentors: 'mentors',
+  AiCoach: 'ai_coach',
 };
 
 async function recordOncePerDay(event) {

@@ -1,5 +1,5 @@
 import { CLIP_FEED } from '../data/clips';
-import { downloadId, workoutMediaUrls } from '../../../lib/downloads/downloadsCore';
+import { downloadId, uniqueUrls, workoutMediaUrls } from '../../../lib/downloads/downloadsCore';
 import { getDownload, loadDownloads, removeDownload, saveDownload } from '../../../lib/downloads/downloadsStore';
 import { rememberExercises, removeSavedSession, saveSessionOffline } from './sessionApi';
 
@@ -15,6 +15,67 @@ export function workoutRefId({ sessionId, programId }) {
   return '';
 }
 
+/** Only the exercise fields the screens use (keeps the download small). */
+function exerciseForDownload(item) {
+  return {
+    id: item.id,
+    name: item.name,
+    focus: item.focus || [],
+    howToFocus: item.howToFocus || item.focus || [],
+    duration: item.duration,
+    mode: item.mode,
+    sets: item.sets,
+    reps: item.reps,
+    rest: item.rest,
+    equipment: item.equipment,
+    instructions: item.instructions || [],
+    muscleHint: item.muscleHint || '',
+    gifUrl: item.gifUrl || null,
+    photoFrames: item.photoFrames || [],
+    bodyPart: item.bodyPart,
+    source: item.source,
+  };
+}
+
+/** 'ready-quick-burn' - ready-made workouts from the Workouts tab (they open in PreStart). */
+export function readyRefId(workoutId) {
+  return workoutId ? `ready-${workoutId}` : '';
+}
+
+/** Ready-made workout (Workouts list / PreStart) as plain JSON: plan + exercises + cover image. */
+export function readyWorkoutSnapshot({ workout, exercises, image }) {
+  const minutes = workout.minutes || 15;
+  const level = workout.level || 'Train';
+  const focus = workout.focus || 'Full body';
+  return {
+    type: 'ready',
+    id: workout.id,
+    name: workout.name || workout.title || 'Workout',
+    meta: `${minutes} min · ${level} · ${focus}`,
+    minutes,
+    level,
+    focus,
+    group: workout.group || '',
+    image: image || null,
+    exerciseIds: exercises.map((item) => item.id),
+    moves: workout.movesList || null,
+    exercises: exercises.map(exerciseForDownload),
+    clips: [],
+  };
+}
+
+export async function downloadReadyWorkout(snapshot) {
+  rememberDownloaded(snapshot.exercises);
+  return saveDownload({
+    kind: 'workout',
+    refId: readyRefId(snapshot.id),
+    title: snapshot.name,
+    subtitle: `${snapshot.exercises.length} moves · ${snapshot.meta}`,
+    data: snapshot,
+    media: uniqueUrls([snapshot.image, ...workoutMediaUrls(snapshot)]),
+  });
+}
+
 /** Everything the Exercises screen + Player need, as plain JSON. */
 export function workoutSnapshot({ session, program, exercises, moves }) {
   const source = session || program || {};
@@ -26,25 +87,7 @@ export function workoutSnapshot({ session, program, exercises, moves }) {
     meta: source.meta || '',
     exerciseIds: exercises.map((item) => item.id),
     moves,
-    // Only the fields the screens use (keeps the download small).
-    exercises: exercises.map((item) => ({
-      id: item.id,
-      name: item.name,
-      focus: item.focus || [],
-      howToFocus: item.howToFocus || item.focus || [],
-      duration: item.duration,
-      mode: item.mode,
-      sets: item.sets,
-      reps: item.reps,
-      rest: item.rest,
-      equipment: item.equipment,
-      instructions: item.instructions || [],
-      muscleHint: item.muscleHint || '',
-      gifUrl: item.gifUrl || null,
-      photoFrames: item.photoFrames || [],
-      bodyPart: item.bodyPart,
-      source: item.source,
-    })),
+    exercises: exercises.map(exerciseForDownload),
     clips: CLIP_FEED.filter((clip) => programId && clip.programId === programId).map((clip) => ({
       id: clip.id,
       title: clip.title,

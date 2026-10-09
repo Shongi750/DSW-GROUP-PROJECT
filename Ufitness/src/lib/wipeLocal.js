@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { disableUnlock } from './biometrics';
 import { removeAllDownloads } from './downloads/downloadsStore';
+import { COACH_HISTORY_PREFIX } from '../features/coach/lib/coachCore';
 
 const KEYS = [
   'ufitness.session.v1',
@@ -24,6 +25,10 @@ const KEYS = [
 
 export async function wipeLocalUfitnessData() {
   await AsyncStorage.multiRemove(KEYS);
+  // AI Coach chats (one key per student)
+  const allKeys = await AsyncStorage.getAllKeys().catch(() => []);
+  const coachKeys = (allKeys || []).filter((key) => key.startsWith(COACH_HISTORY_PREFIX));
+  if (coachKeys.length) await AsyncStorage.multiRemove(coachKeys);
   await removeAllDownloads().catch(() => {}); // offline downloads + their files
   await disableUnlock();
 }
