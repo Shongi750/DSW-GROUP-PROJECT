@@ -71,8 +71,15 @@ export function cloudSafeCommunity(state) {
   };
 }
 
-export async function fetchCloudDoc(doc, uid = currentUid()) {
-  if (!isSupabaseConfigured || !supabase || !uid || !doc) return null;
+/**
+ * Like fetchCloudDoc, but tells "not found" apart from "could not ask".
+ * { ok: true, data }  → the cloud answered (data is null when there is no row yet)
+ * { ok: false, data: null } → offline / no Supabase / table missing / error
+ * Callers must NOT push a local copy over the cloud when ok is false, or an offline
+ * sign-in would overwrite the student's saved progress with an empty profile.
+ */
+export async function fetchCloudDocResult(doc, uid = currentUid()) {
+  if (!isSupabaseConfigured || !supabase || !uid || !doc) return { ok: false, data: null };
   try {
     const { data, error } = await supabase
       .from('user_docs')
@@ -82,13 +89,17 @@ export async function fetchCloudDoc(doc, uid = currentUid()) {
       .maybeSingle();
     if (error) {
       if (isMissingTableError(error)) setSyncStatus('missing');
-      return null;
+      return { ok: false, data: null };
     }
-    if (!data) return null;
-    return data.data ?? null;
+    return { ok: true, data: data?.data ?? null };
   } catch {
-    return null;
+    return { ok: false, data: null };
   }
+}
+
+export async function fetchCloudDoc(doc, uid = currentUid()) {
+  const result = await fetchCloudDocResult(doc, uid);
+  return result.data;
 }
 
 export async function saveCloudDoc(doc, uid, data) {

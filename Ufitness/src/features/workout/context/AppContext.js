@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
-import { fetchRemoteProfile, saveRemoteProfile, resolveProfileForUser } from '../lib/cloudProfile';
+import { fetchRemoteProfileResult, saveRemoteProfile, resolveProfileForUser } from '../lib/cloudProfile';
+import { readLocalWorkoutProfile, writeLocalWorkoutProfile } from '../lib/workoutCache';
 import { recommendPrograms } from '../data/recommend';
 import { toDateKey, getWeekDays } from '../data/week';
 import { exercises as localExercises } from '../data/exercises';
@@ -82,12 +83,18 @@ function migrateProfile(parsed) {
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const { uid } = useAuth();
+  const { uid, email } = useAuth();
   const { profile: mainProfile } = useMainApp();
   const [profile, setProfile] = useState(defaultProfile);
   const [ready, setReady] = useState(false);
   const [syncState, setSyncState] = useState('idle');
   const syncedUid = useRef(null);
+  // uid whose data has finished loading. Until then, saves stay on the phone only, so an
+  // early auto-save (e.g. the main-profile seed) can't overwrite the account's real progress.
+  const [loadedUid, setLoadedUid] = useState(null);
+  const loadedUidRef = useRef(null);
+  // Only push to the cloud after we have actually read the cloud copy for this uid.
+  const cloudReadRef = useRef(false);
   const previousUid = useRef(null);
   const pushTimer = useRef(null);
   const [catalog, setCatalog] = useState(localExercises);
@@ -165,6 +172,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!ready) return;
     if (previousUid.current && !uid) {
+      // The account's copy stays under its own per-account key; only the shared copy is cleared.
       setProfile(defaultProfile);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProfile)).catch(() => {});
       setSyncState('idle');
@@ -172,32 +180,53 @@ export function AppProvider({ children }) {
     previousUid.current = uid;
   }, [uid, ready]);
 
-  // Pull the account's profile once per sign-in, folding in anything logged as a guest.
+  // Load the account's profile once per sign-in: local (per-account cache, or legacy/guest data
+  // on this phone) + cloud. If the cloud can't be reached we keep the local copy and do NOT push
+  // it up, so an offline sign-in can never wipe the saved progress in Supabase.
   useEffect(() => {
     if (!ready) return;
     if (!uid) {
       syncedUid.current = null;
+      loadedUidRef.current = null;
+      setLoadedUid(null);
       setSyncState('idle');
       return;
     }
     if (syncedUid.current === uid) return;
     syncedUid.current = uid;
+    loadedUidRef.current = null;
+    cloudReadRef.current = false;
+    setLoadedUid(null);
 
     let active = true;
     setSyncState('syncing');
-    fetchRemoteProfile(uid)
-      .then(async (remoteProfile) => {
-        if (!active) return;
-        const resolved = resolveProfileForUser({ localProfile: profile, remoteProfile, uid });
-        const next = { ...resolved, updatedAt: new Date().toISOString() };
-        setProfile(next);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+    (async () => {
+      const local = await readLocalWorkoutProfile(uid, email);
+      const { ok, profile: remoteProfile } = await fetchRemoteProfileResult(uid);
+      if (!active) return;
+      let next;
+      if (ok) {
+        const resolved = resolveProfileForUser({ localProfile: local || {}, remoteProfile, uid, email });
+        next = { ...migrateProfile(resolved), ownerUid: uid, updatedAt: new Date().toISOString() };
+      } else {
+        next = { ...migrateProfile(local || {}), ownerUid: uid };
+      }
+      setProfile(next);
+      await writeLocalWorkoutProfile(uid, next);
+      loadedUidRef.current = uid;
+      cloudReadRef.current = ok;
+      setLoadedUid(uid);
+      if (ok) {
         await saveRemoteProfile(uid, next);
         if (active) setSyncState('synced');
-      })
-      .catch(() => {
-        if (active) setSyncState('error');
-      });
+      } else if (active) {
+        // Couldn't read the cloud: keep working on the phone; it syncs next time the tab opens.
+        syncedUid.current = null;
+        setSyncState('error');
+      }
+    })().catch(() => {
+      if (active) setSyncState('error');
+    });
 
     return () => {
       active = false;
@@ -214,9 +243,12 @@ export function AppProvider({ children }) {
   const persist = (next) => {
     const stamped = { ...next, updatedAt: new Date().toISOString(), ownerUid: uid || next.ownerUid || null };
     setProfile(stamped);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(stamped)).catch(() => {});
+    // Before this account's data has loaded, only touch the shared key (never the per-account
+    // copy or the cloud), otherwise a too-early save would replace real progress.
+    const loaded = Boolean(uid) && loadedUidRef.current === uid;
+    writeLocalWorkoutProfile(loaded ? uid : null, stamped);
 
-    if (!uid) return;
+    if (!uid || !loaded || !cloudReadRef.current) return;
     // Batch rapid edits (steppers, toggles) into one write.
     if (pushTimer.current) clearTimeout(pushTimer.current);
     setSyncState('syncing');
@@ -229,12 +261,14 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     if (!ready) return;
+    if (uid && loadedUid !== uid) return; // wait for this account's data first
     const patch = applyMainProfileSeed(mainProfile, profile);
     if (!patch) return;
     persist({ ...profile, ...patch });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-seed when main identity fields change
   }, [
     ready,
+    loadedUid,
     mainProfile?.fitnessGoal,
     mainProfile?.campus,
     mainProfile?.experienceLevel,

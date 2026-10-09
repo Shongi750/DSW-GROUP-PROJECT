@@ -1,5 +1,6 @@
 // Pure profile-merge rules, deliberately free of backend or React Native imports so they
 // can be reasoned about (and tested) on their own.
+import { ownsLocalData } from '../../../lib/authGuard';
 
 function uniqueStrings(...lists) {
   return [...new Set(lists.flat().filter(Boolean))];
@@ -53,18 +54,37 @@ export function mergeProfiles(local, remote) {
 
 /**
  * Guest data belongs to whoever is on the device, so it is folded into the account on first
- * sign-in. Data owned by a different account is never merged across.
+ * sign-in. Data from an old offline build ("local-<same email>") is migrated once. Data owned by
+ * a different account is never merged across.
  */
-export function resolveProfileForUser({ localProfile, remoteProfile, uid }) {
-  const localOwner = localProfile?.ownerUid || null;
-  const localIsGuestData = !localOwner;
-  const localBelongsToUser = localOwner === uid;
+export function resolveProfileForUser({ localProfile, remoteProfile, uid, email }) {
+  const mine = ownsLocalData(localProfile?.ownerUid || null, { uid, email });
 
   if (!remoteProfile) {
-    return { ...localProfile, ownerUid: uid, mergedFrom: 'local' };
+    // Nothing in the cloud yet: keep our own local progress, never another student's.
+    if (mine) return { ...localProfile, ownerUid: uid, mergedFrom: 'local' };
+    return { ownerUid: uid, mergedFrom: 'empty' };
   }
-  if (localIsGuestData || localBelongsToUser) {
+  if (mine) {
     return { ...mergeProfiles(localProfile, remoteProfile), ownerUid: uid };
   }
   return { ...remoteProfile, ownerUid: uid, mergedFrom: 'remote' };
+}
+
+/**
+ * Pick the best local copy of the workout profile for this account on sign-in.
+ * Order: the per-account cache (written on every save) → the shared "active" copy if it is
+ * ours (same uid, legacy local-<email>, or ownerless guest data) → nothing.
+ */
+export function pickLocalWorkoutProfile({ perUser, active, uid, email }) {
+  if (perUser && typeof perUser === 'object') return perUser;
+  if (active && typeof active === 'object' && ownsLocalData(active.ownerUid || null, { uid, email })) {
+    return active;
+  }
+  return null;
+}
+
+/** AsyncStorage key for one account's workout profile cache. */
+export function workoutProfileKeyFor(baseKey, uid) {
+  return uid ? `${baseKey}:${uid}` : baseKey;
 }

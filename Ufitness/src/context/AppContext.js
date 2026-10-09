@@ -18,6 +18,14 @@ import { isRateLimitError } from '../lib/resendCooldown';
 import { fetchMySuspension } from '../lib/moderation';
 import { AppState } from 'react-native';
 import { startAutoSync } from '../lib/autoSync';
+import { isLegacyLocalId, isRealAuthUserId } from '../lib/authGuard';
+import { activateWorkoutProfileFor } from '../features/workout/lib/workoutCache';
+
+// Shown when the build has no EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY.
+// Old builds silently created a phone-only "local-…" account here and opened Home; that
+// account never existed in Supabase Auth, so it is no longer allowed.
+const NO_SUPABASE_MESSAGE =
+  'UFitness can\'t reach its account server (Supabase keys missing from .env). Restart Expo after adding them.';
 
 const STORAGE_KEY = 'ufitness.session.v1';
 const GUEST_KEY = 'workoutapp.guest.v1';
@@ -87,8 +95,11 @@ async function readSavedSession() {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return { user: null, profile: emptyProfile };
   const saved = JSON.parse(raw);
+  // A "local-…" user from an old offline build was never a Supabase account: don't restore it
+  // as signed in. Its profile is still kept (and migrated by email on the next real sign-in).
+  const savedUser = saved.user && !isLegacyLocalId(saved.user.id) ? saved.user : null;
   return {
-    user: saved.user || null,
+    user: savedUser,
     profile: { ...emptyProfile, ...(saved.profile || {}) },
   };
 }
@@ -118,6 +129,7 @@ async function startLoggedOutIfRequested() {
 }
 
 async function persist(nextUser, nextProfile) {
+  if (!nextUser || !isRealAuthUserId(nextUser.id)) return; // never save a fake/signed-out session
   await AsyncStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({ user: nextUser, profile: nextProfile }),
@@ -151,7 +163,10 @@ async function profileForAuth(authUser, savedProfile) {
   const local =
     remembered ||
     (sameAccount(savedProfile, authUser) ? savedProfile : emptyProfile);
-  const remote = setupLooksComplete(local) ? null : await fetchCloudUser(authUser.uid);
+  // Always ask the cloud too: a profile saved on another phone (or before a reinstall) must come
+  // back on login instead of sending the student through setup again. mergeCloudProfile keeps
+  // local edits and fills gaps from the cloud. fetchCloudUser returns null offline.
+  const remote = await fetchCloudUser(authUser.uid);
   const base = mergeCloudProfile(local, remote);
   const next = {
     ...base,
@@ -201,6 +216,7 @@ export function AppProvider({ children }) {
     let unsubscribe = () => {};
 
     const applyBudgeted = async (nextUser, nextProfile) => {
+      if (nextUser?.id) await activateWorkoutProfileFor(nextUser.id, nextUser.email);
       const budgeted = await withBudget(nextProfile);
       if (!active) return;
       setUser(nextUser);
@@ -225,9 +241,11 @@ export function AppProvider({ children }) {
         await clearPendingSignup();
         const saved = await readSavedSession();
         if (!isSupabaseConfigured || !supabase) {
+          // No account server → nobody is signed in. (Old builds restored a local-only user here.)
+          console.warn('Supabase is not configured. Check Ufitness/.env');
           setEmailVerified(true);
           setAwaitingLink(false);
-          await applyBudgeted(saved.user, saved.profile);
+          await applyBudgeted(null, emptyProfile);
           return;
         }
 
@@ -308,6 +326,7 @@ export function AppProvider({ children }) {
       setEmailVerified(true);
       setAwaitingLink(false);
       await persist(nextUser, nextProfile);
+      await activateWorkoutProfileFor(nextUser.id, nextUser.email);
       const budgeted = await withBudget(nextProfile);
       setUser(nextUser);
       setProfile(budgeted);
@@ -317,22 +336,7 @@ export function AppProvider({ children }) {
       return budgeted;
     }
 
-    const nextUser = {
-      id: profile.userId || `local-${account.email}`,
-      email: account.email,
-    };
-    const nextProfile = {
-      ...profile,
-      userId: nextUser.id,
-      email: account.email,
-      studentNumber: profile.studentNumber || account.studentNumber,
-      name: personName(profile.name),
-    };
-    setEmailVerified(true);
-    setUser(nextUser);
-    setProfile(nextProfile);
-    await persist(nextUser, nextProfile);
-    return nextProfile;
+    throw new Error(NO_SUPABASE_MESSAGE);
   };
 
   const register = async ({ name, email, studentNumber, password }) => {
@@ -350,20 +354,7 @@ export function AppProvider({ children }) {
       return { needsOtp: true };
     }
 
-    const nextUser = { id: `local-${account.email}`, email: account.email };
-    const nextProfile = {
-      ...emptyProfile,
-      userId: nextUser.id,
-      name,
-      email: account.email,
-      studentNumber: account.studentNumber,
-      onboardingComplete: false,
-    };
-    setEmailVerified(true);
-    setUser(nextUser);
-    setProfile(nextProfile);
-    await persist(nextUser, nextProfile);
-    return nextProfile;
+    throw new Error(NO_SUPABASE_MESSAGE);
   };
 
   const resetPassword = async (email) => {
@@ -430,7 +421,9 @@ export function AppProvider({ children }) {
       type: 'email',
     });
     if (error) throw new Error(authError(error));
-    if (!data.user) throw new Error('That code did not confirm the account. Request a new one.');
+    if (!data.user || !data.session || !isRealAuthUserId(data.user.id)) {
+      throw new Error('That code did not confirm the account. Request a new one.');
+    }
     if (pendingOtp.password) {
       const { error: passwordError } = await supabase.auth.updateUser({ password: pendingOtp.password });
       if (passwordError) throw new Error(authError(passwordError));
@@ -450,6 +443,7 @@ export function AppProvider({ children }) {
     setPendingOtp(null);
     setEmailVerified(true);
     await persist(nextUser, nextProfile);
+    await activateWorkoutProfileFor(nextUser.id, nextUser.email);
     setUser(nextUser);
     setProfile(await withBudget(nextProfile));
     pendingRef.current = null;
@@ -681,7 +675,8 @@ export function AppProvider({ children }) {
     backToRegister,
     registerDraft,
     clearRegisterDraft: () => setRegisterDraft(null),
-    needsEmailVerification: Boolean(pendingOtp) && !user,
+    needsEmailVerification: Boolean(pendingOtp) && !isRealAuthUserId(user?.id),
+    pendingOtp: Boolean(pendingOtp),
     updateField,
     updateFields,
     completeOnboarding,
